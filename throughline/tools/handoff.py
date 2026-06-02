@@ -33,6 +33,15 @@ import os
 import re
 import sys
 
+# Force UTF-8 output so the ⭐️ in the template/messages can't crash the script on a
+# non-UTF-8 console (e.g. Windows GBK/cp936), where printing it would otherwise raise
+# UnicodeEncodeError. Best-effort, stdlib-only — keeps the zero-dependency promise.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 # templates/ is a sibling of tools/
 TEMPLATE = os.path.normpath(os.path.join(HERE, "..", "templates", "handoff.template.md"))

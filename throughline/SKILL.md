@@ -1,6 +1,6 @@
 ---
 name: throughline
-description: "Throughline keeps the thread of work intact — within a session and across sessions/agents. Two linked habits: (1) TASK TRACK — an emoji-tagged task list with exactly one ⭐️ MAIN goal anchor, so you can see at a glance whether you're still solving the main thing or have drifted; (2) HANDOFF — compact the session into a plain-markdown handoff doc the next agent (any agent) can pick up cleanly. Use this whenever you start or organize a multi-step task, when you catch yourself drifting off the original goal, when wrapping up or running low on context, when asked to 'hand this off' / 'write a handoff' / 'summarize for the next session' / 'compact this' / 'pick up where we left off' / 'resume', or any time work spans more than one session or more than one agent. Capability-agnostic and cross-platform — works as a skill or as a plain paste-in prompt."
+description: "Throughline keeps the thread of work intact on work that's big enough to drift or that outlives one sitting. Two linked habits: (1) TASK TRACK — an emoji-tagged task list with exactly one ⭐️ MAIN goal anchor, so you can see at a glance whether you're still solving the main thing or have drifted; (2) HANDOFF — compact a session into a plain-markdown handoff doc the next agent (any agent) can pick up cleanly. Reach for it when: a long or many-step task is at real risk of losing the thread, you catch yourself drifting off the original goal, you're wrapping up or running low on context, you're switching agents or sessions, or you're explicitly asked to 'hand this off' / 'write a handoff' / 'summarize for the next session' / 'compact this' / 'pick up where we left off' / 'resume'. Do NOT reach for it on short, self-contained tasks that finish in one pass — the full protocol is overhead there. Capability-agnostic and cross-platform — works as a skill or a plain paste-in prompt."
 license: MIT
 ---
 
@@ -34,7 +34,8 @@ through both, which is why they ship together.
 
 ## When to use
 
-- Starting or organizing any task with more than ~3 steps → set up Task Track.
+- A **long or many-step task at real risk of losing the thread** → set up Task Track. (For a
+  short, self-contained task that finishes in one pass, skip it — the overhead isn't worth it.)
 - You notice the work has wandered → re-read the ⭐️ MAIN and decide if you've drifted.
 - Wrapping up, running low on context, or switching agents → write a Handoff.
 - Beginning a session that has a prior handoff → run the Resume flow.
