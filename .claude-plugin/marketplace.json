@@ -1,0 +1,29 @@
+{
+  "name": "whetstone",
+  "owner": {
+    "name": "guxcom",
+    "url": "https://guxcom.io"
+  },
+  "metadata": {
+    "description": "Small, sharp, agent-agnostic skills that keep an AI agent's work honest.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "session-measurement",
+      "source": "./session-measurement",
+      "description": "Measure an AI agent's per-session performance on a small, stable metric set and track it as a trend over a long run, so a model / frame / skill change shows up as a real regression or improvement. Plain-markdown trend table (canonical, zero-dependency); optional chart renderer.",
+      "version": "0.1.0",
+      "author": { "name": "guxcom" },
+      "keywords": ["agent-benchmark", "performance-trend", "session-measurement", "ai-agents", "regression-tracking", "evaluation"]
+    },
+    {
+      "name": "throughline",
+      "source": "./handoff-skill/throughline",
+      "description": "Keep the thread of work intact — within a session (an emoji-tagged task list with one MAIN goal anchor) and across sessions or agents (a plain-markdown handoff the next agent re-derives before trusting). For long/multi-session work.",
+      "version": "0.1.1",
+      "author": { "name": "guxcom" },
+      "keywords": ["handoff", "session-continuity", "task-tracking", "ai-agents", "anti-drift"]
+    }
+  ]
+}

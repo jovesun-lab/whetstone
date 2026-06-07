@@ -32,6 +32,21 @@ work on-track, high-quality, and easy to hand off.
 Each skill is a self-contained folder. Drop it where your tool reads skills/commands
 (Claude Code, Cursor, …), or just paste the relevant file into any agent as a prompt. Start with
 each skill's own `README.md`.
+
+## Install as a Claude plugin
+
+Whetstone is also a Claude plugin marketplace, so you can install these skills directly in Claude
+Code or Cowork:
+
+```
+/plugin marketplace add jovesun-lab/whetstone
+/plugin install session-measurement@whetstone
+/plugin install throughline@whetstone
+```
+
+Installed skills are enabled by default and trigger automatically when relevant. Pull future
+updates with `/plugin marketplace update whetstone`.
+
 ## Token footprint
 
 Built to be cheap to keep installed and modest to use (approximate, tokenizer-dependent):
