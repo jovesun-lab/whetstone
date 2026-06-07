@@ -1,0 +1,60 @@
+{
+  "project": "CodeAssistant on the billing-service repo",
+  "version_axis_label": "model",
+  "sessions": [
+    {
+      "id": "S1",
+      "label": "2026-01-04 - add retry to the payment client",
+      "version": "model-a",
+      "tag": "baseline",
+      "main_landed": "L",
+      "metrics": {
+        "Redefinitions absorbed": 2,
+        "Clarifying gates raised (asked, not guessed)": 3,
+        "Errors the agent self-caught": 2,
+        "Misses the human caught": 1,
+        "Critical bugs - agent caught": 0,
+        "Critical bugs - human caught": 0
+      },
+      "footnotes": ["full-read. shipped the retry + tests pass; the one miss was an off-by-one in the backoff cap you caught."]
+    },
+    {
+      "id": "S2",
+      "label": "2026-01-06 - refactor the invoice builder",
+      "version": "model-a",
+      "tag": "",
+      "main_landed": "P",
+      "metrics": {
+        "Redefinitions absorbed": 3,
+        "Clarifying gates raised (asked, not guessed)": 2,
+        "Errors the agent self-caught": 1,
+        "Misses the human caught": 2,
+        "Critical bugs - agent caught": 0,
+        "Critical bugs - human caught": 1
+      },
+      "callouts": {
+        "Critical bugs - human caught": ["CRITICAL (human-caught): the refactor dropped the tax-line", "rounding - a working feature broke; tests were green because", "that path had no test. you caught it in review."]
+      },
+      "footnotes": ["partial: refactor landed but reverted the rounding change. tail-read estimate."]
+    },
+    {
+      "id": "S3",
+      "label": "2026-01-09 - same task, new model",
+      "version": "model-b",
+      "tag": "model swap",
+      "main_landed": "L",
+      "metrics": {
+        "Redefinitions absorbed": 2,
+        "Clarifying gates raised (asked, not guessed)": 3,
+        "Errors the agent self-caught": 3,
+        "Misses the human caught": 0,
+        "Critical bugs - agent caught": 1,
+        "Critical bugs - human caught": 0
+      },
+      "callouts": {
+        "Critical bugs - agent caught": ["agent-caught: noticed it had reintroduced the S2 rounding bug,", "flagged + fixed it itself before review - owned the regression."]
+      },
+      "footnotes": ["full-read. model-b self-caught the regression model-a leaked; misses 0. the trend's first signal that the swap helped."]
+    }
+  ]
+}

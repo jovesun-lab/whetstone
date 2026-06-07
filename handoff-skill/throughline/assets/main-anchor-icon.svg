@@ -1,0 +1,9 @@
+<!-- Optional MAIN goal-anchor icon for arcgram-style flow diagrams.
+     Use in an image/diagram to mark the ⭐️ MAIN node. NOTE: the skill's task-list
+     convention still uses the plain ⭐️ / [MAIN] text marker (works in any task UI);
+     this SVG is for diagrams and branding only, where custom assets are supported. -->
+<svg width="308" height="308" viewBox="0 0 308 308" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M303.758 154L154 303.758L4.24219 154L154 4.24219L303.758 154ZM55.1963 154L154 252.804L252.804 154L154 55.1963L55.1963 154Z" fill="#BE8800" stroke="black" stroke-width="6"/>
+<path d="M153.5 22.5C172.333 22.5 187.5 38.0093 187.5 57.0166V57.0586L187.499 57.1006L184.922 165.005C184.904 174.205 181.954 184.85 176.757 193.278C171.584 201.668 163.667 208.612 153.5 208.612C143.333 208.612 135.416 201.668 130.243 193.278C125.046 184.85 122.096 174.205 122.078 165.005L119.501 57.1006L119.5 57.0586V57.0166C119.5 38.0093 134.667 22.5 153.5 22.5Z" fill="#FFCC00" stroke="black" stroke-width="7"/>
+<path d="M153.93 220.834C171.577 220.835 185.782 235.366 185.782 253.167C185.781 270.968 171.576 285.5 153.93 285.5C136.283 285.5 122.078 270.969 122.078 253.167C122.078 235.366 136.283 220.834 153.93 220.834Z" fill="#FFCC00" stroke="black" stroke-width="7"/>
+</svg>

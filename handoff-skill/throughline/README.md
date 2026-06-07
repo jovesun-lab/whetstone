@@ -32,7 +32,8 @@ as the next ⭐️ MAIN (🔑4) — which loops back (dashed) to begin the cycle
 
 | Path | What it is |
 |---|---|
-| `SKILL.md` | The skill — the two habits and how they connect. Works as a skill or a paste-in prompt. |
+| `skills/throughline/SKILL.md` | The skill — the two habits and how they connect. Works as a skill or a paste-in prompt. |
+| `.claude-plugin/plugin.json` | Plugin manifest (so it installs as a Claude Code / Cowork plugin). |
 | `commands/handoff.md` | The **write** operation: compact a session into a handoff doc. |
 | `commands/resume.md` | The **read** operation: pick up a handoff and re-derive before trusting it. |
 | `templates/handoff.template.md` | The single source of truth for a handoff's structure. |

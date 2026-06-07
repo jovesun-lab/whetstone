@@ -1,0 +1,77 @@
+<svg viewBox="0 0 1180 950" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif" role="img">
+<title>Session-measurement skill flow, color-coded by cross-agent workability</title>
+<desc>A vertical run-loop on the left; green steps are universal, amber are one-time config, blue are optional and degrade gracefully. Right column: the verdict, the per-project config, and how the optional steps degrade.</desc>
+<rect width="1180" height="950" fill="#0b0d18"/>
+<text x="40" y="40" font-size="19" font-weight="700" fill="#e8ecf5">Session-Measurement Skill - does the flow work for ANY agent?</text>
+<text x="40" y="62" font-size="12" fill="#8a93a8">a run-loop you repeat each session; color = how portable each step is across agents</text>
+<rect x="720" y="34" width="15" height="13" rx="3" fill="#163807" stroke="#97c459" stroke-width="1.6"/>
+<text x="742" y="45" font-size="12" fill="#8a93a8">universal</text>
+<rect x="870" y="34" width="15" height="13" rx="3" fill="#3a2c08" stroke="#c7a86a" stroke-width="1.6"/>
+<text x="892" y="45" font-size="12" fill="#8a93a8">config</text>
+<rect x="1020" y="34" width="15" height="13" rx="3" fill="#0e2233" stroke="#6db3e8" stroke-width="1.6"/>
+<text x="1042" y="45" font-size="12" fill="#8a93a8">optional</text>
+<defs><marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#6f7890"/></marker></defs>
+<path d="M230,167.0 L230,183.0" fill="none" stroke="#6f7890" stroke-width="1.6" stroke-dasharray="6 5" marker-end="url(#ar)"/>
+<path d="M230,245.0 L230,261.0" fill="none" stroke="#6f7890" stroke-width="1.6" marker-end="url(#ar)"/>
+<path d="M230,323.0 L230,339.0" fill="none" stroke="#6f7890" stroke-width="1.6" marker-end="url(#ar)"/>
+<path d="M230,401.0 L230,417.0" fill="none" stroke="#6f7890" stroke-width="1.6" marker-end="url(#ar)"/>
+<path d="M230,479.0 L230,495.0" fill="none" stroke="#6f7890" stroke-width="1.6" marker-end="url(#ar)"/>
+<path d="M230,557.0 L230,573.0" fill="none" stroke="#6f7890" stroke-width="1.6" marker-end="url(#ar)"/>
+<path d="M230,635.0 L230,651.0" fill="none" stroke="#6f7890" stroke-width="1.6" marker-end="url(#ar)"/>
+<path d="M230,713.0 L230,729.0" fill="none" stroke="#6f7890" stroke-width="1.6" marker-end="url(#ar)"/>
+<path d="M230,791.0 L230,807.0" fill="none" stroke="#6f7890" stroke-width="1.6" marker-end="url(#ar)"/>
+<rect x="70.0" y="113.0" width="320" height="54" rx="9" fill="#1a1e2b" stroke="#8a93a8" stroke-width="2"/>
+<text x="230" y="137" font-size="14" font-weight="700" fill="#e8ecf5" text-anchor="middle">Trigger: measure a session</text>
+<text x="230" y="156" font-size="10.5" fill="#8a93a8" text-anchor="middle">the same on any agent</text>
+<rect x="70.0" y="191.0" width="320" height="54" rx="9" fill="#3a2c08" stroke="#c7a86a" stroke-width="2"/>
+<text x="230" y="215" font-size="14" font-weight="700" fill="#e8ecf5" text-anchor="middle">First run: set up config.json</text>
+<text x="230" y="234" font-size="10.5" fill="#8a93a8" text-anchor="middle">set once</text>
+<rect x="70.0" y="269.0" width="320" height="54" rx="9" fill="#3a2c08" stroke="#c7a86a" stroke-width="2"/>
+<text x="230" y="293" font-size="14" font-weight="700" fill="#e8ecf5" text-anchor="middle">1. Locate the session</text>
+<text x="230" y="312" font-size="10.5" fill="#8a93a8" text-anchor="middle">adapter: transcript_source</text>
+<rect x="70.0" y="347.0" width="320" height="54" rx="9" fill="#0e2233" stroke="#6db3e8" stroke-width="2"/>
+<text x="230" y="371" font-size="14" font-weight="700" fill="#e8ecf5" text-anchor="middle">2. Read the transcript</text>
+<text x="230" y="390" font-size="10.5" fill="#8a93a8" text-anchor="middle">full read preferred - degrades to paste</text>
+<rect x="70.0" y="425.0" width="320" height="54" rx="9" fill="#163807" stroke="#97c459" stroke-width="2"/>
+<text x="230" y="449" font-size="14" font-weight="700" fill="#e8ecf5" text-anchor="middle">3. Derive the 6 counts</text>
+<text x="230" y="468" font-size="10.5" fill="#8a93a8" text-anchor="middle">UNIVERSAL - pure judgment</text>
+<rect x="70.0" y="503.0" width="320" height="54" rx="9" fill="#0e2233" stroke="#6db3e8" stroke-width="2"/>
+<text x="230" y="527" font-size="14" font-weight="700" fill="#e8ecf5" text-anchor="middle">4. Ground vs the record</text>
+<text x="230" y="546" font-size="10.5" fill="#8a93a8" text-anchor="middle">optional - degrades to none</text>
+<rect x="70.0" y="581.0" width="320" height="54" rx="9" fill="#163807" stroke="#97c459" stroke-width="2"/>
+<text x="230" y="605" font-size="14" font-weight="700" fill="#e8ecf5" text-anchor="middle">5. Record the markdown trend table</text>
+<text x="230" y="624" font-size="10.5" fill="#8a93a8" text-anchor="middle">CANONICAL - zero dependency</text>
+<rect x="70.0" y="659.0" width="320" height="54" rx="9" fill="#0e2233" stroke="#6db3e8" stroke-width="2"/>
+<text x="230" y="683" font-size="14" font-weight="700" fill="#e8ecf5" text-anchor="middle">6. (Optional) render a chart</text>
+<text x="230" y="702" font-size="10.5" fill="#8a93a8" text-anchor="middle">host-dependent - skippable</text>
+<rect x="70.0" y="737.0" width="320" height="54" rx="9" fill="#163807" stroke="#97c459" stroke-width="2"/>
+<text x="230" y="761" font-size="14" font-weight="700" fill="#e8ecf5" text-anchor="middle">7. Append the per-session entry</text>
+<text x="230" y="780" font-size="10.5" fill="#8a93a8" text-anchor="middle">UNIVERSAL</text>
+<rect x="70.0" y="815.0" width="320" height="54" rx="9" fill="#1d3a0a" stroke="#97c459" stroke-width="2"/>
+<text x="230" y="839" font-size="14" font-weight="700" fill="#e8ecf5" text-anchor="middle">Output: trend table (+ optional chart)</text>
+<text x="230" y="858" font-size="10.5" fill="#8a93a8" text-anchor="middle">the long-run record</text>
+<rect x="620" y="140" width="520" height="300" rx="11" fill="#1e1830" stroke="#b89cff" stroke-width="2"/>
+<text x="640" y="170" font-size="14.5" font-weight="700" fill="#cdbcff">Workable for any agent?   YES</text>
+<text x="640" y="196" font-size="12" fill="#e8ecf5">The PORTABLE CORE - derive -&gt; record -&gt; append -&gt; output</text>
+<text x="640" y="214" font-size="12" fill="#e8ecf5">(the green steps) - needs only two things:</text>
+<text x="640" y="232" font-size="12" fill="#e8ecf5">read text, and write markdown.</text>
+<text x="640" y="250" font-size="12" fill="#e8ecf5">So it runs unchanged on Claude / OpenAI / Gemini /</text>
+<text x="640" y="268" font-size="12" fill="#e8ecf5">Cursor / Cline / Aider / a local model.</text>
+<text x="640" y="286" font-size="12" fill="#e8ecf5"></text>
+<text x="640" y="304" font-size="12" fill="#e8ecf5">Amber = config, filled once per project.</text>
+<text x="640" y="322" font-size="12" fill="#e8ecf5">Blue  = optional, and degrades gracefully (below).</text>
+<text x="640" y="340" font-size="12" fill="#e8ecf5"></text>
+<text x="640" y="358" font-size="12" fill="#e8ecf5">The ONE real requirement: access to the session content</text>
+<text x="640" y="376" font-size="12" fill="#e8ecf5">- a reader tool, or the user pastes the transcript.</text>
+<rect x="620" y="470" width="520" height="170" rx="11" fill="#241a06" stroke="#c7a86a" stroke-width="2"/>
+<text x="640" y="500" font-size="14.5" font-weight="700" fill="#e0c98a">What varies per project - config.json (set once)</text>
+<text x="640" y="526" font-size="12" fill="#e8ecf5">transcript_source  - how to get a transcript here</text>
+<text x="640" y="544" font-size="12" fill="#e8ecf5">critical_definition - what 'severe' means in this domain</text>
+<text x="640" y="562" font-size="12" fill="#e8ecf5">version_axis        - model / frame / build</text>
+<text x="640" y="580" font-size="12" fill="#e8ecf5">grounding_source    - a status / work log, or none</text>
+<rect x="620" y="670" width="520" height="160" rx="11" fill="#0a1a26" stroke="#6db3e8" stroke-width="2"/>
+<text x="640" y="700" font-size="14.5" font-weight="700" fill="#9cd0f2">Every blue step degrades - never blocks</text>
+<text x="640" y="726" font-size="12" fill="#e8ecf5">no reader tool   -&gt; the user pastes the transcript</text>
+<text x="640" y="744" font-size="12" fill="#e8ecf5">no authoritative log -&gt; mark the counts ungrounded</text>
+<text x="640" y="762" font-size="12" fill="#e8ecf5">no Python        -&gt; keep the table, skip the chart</text>
+</svg>

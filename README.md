@@ -23,7 +23,8 @@ work on-track, high-quality, and easy to hand off.
 
 | Skill | What it does |
 |---|---|
-| **[Throughline](./throughline)** | Keep the thread of work intact — within a session (an emoji-tagged task list with one ⭐️ goal anchor) and across sessions or agents (a plain-markdown handoff the next agent re-derives before trusting). |
+| **[Throughline](./handoff-skill/throughline)** | Keep the thread of work intact — within a session (an emoji-tagged task list with one ⭐️ goal anchor) and across sessions or agents (a plain-markdown handoff the next agent re-derives before trusting). |
+| **[Session Measurement](./session-measurement)** | Score an agent session by session and read the trend across versions — so a model / frame / skill change shows up as a real regression or improvement, not a vibe. Six honest counts per session, plain-markdown trend table (optional charts), any agent. |
 | _more coming_ | — |
 
 ## Use one

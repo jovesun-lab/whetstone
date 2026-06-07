@@ -1,0 +1,8 @@
+{
+  "project": "CodeAssistant on the billing-service repo",
+  "version_axis_label": "model",
+  "transcript_source": "session-reader tool if the host exposes one; otherwise the user exports the chat transcript to a .txt and points the agent at it",
+  "critical_definition": "Defaults (task forgetting; a fixed bug recurs 2+ times; a bug breaks a working feature / dead-loop) PLUS: shipped code that fails the existing test suite; a secret/credential leaked into output",
+  "grounding_source": "the repo's CHANGELOG + the PR description for the session's branch",
+  "exclusions": "pure Q&A / explanation sessions with no code change"
+}
