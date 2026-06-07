@@ -6,6 +6,8 @@
 > agent session into a row of objective counts, keep them in a running trend table, and read the trend
 > over a long run to catch regression or improvement.
 
+![Session-measurement flow — each step color-coded by how portable it is across agents](assets/logic-flow.svg)
+
 ---
 
 ## The problem
@@ -101,7 +103,7 @@ it into any agent as a prompt.
 | `references/log-template.md` | The persistent log structure (trend table + per-session entries). |
 | `tools/render_benchmark.py` | **Optional** chart renderer (Python + cairosvg). Reads `sessions.json`. |
 | `examples/` | A neutral worked example (a "model swap" story) + a `sessions.json`. |
-| `assets/logic-flow.svg` | The skill's flow, color-coded by cross-agent workability. |
+| `assets/logic-flow.svg` | The diagram above — the flow, color-coded by cross-agent workability. |
 
 ## Token footprint
 
