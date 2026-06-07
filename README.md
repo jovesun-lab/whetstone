@@ -23,20 +23,14 @@ work on-track, high-quality, and easy to hand off.
 
 | Skill | What it does |
 |---|---|
-| **[Throughline](./handoff-skill/throughline)** | Keep the thread of work intact — within a session (an emoji-tagged task list with one ⭐️ goal anchor) and across sessions or agents (a plain-markdown handoff the next agent re-derives before trusting). |
+| **[Throughline](./handoff-skill/throughline)** | Task-Track & Handoff for AI agents on long, multi-session work — within a session, one ⭐️ MAIN goal anchor in an emoji-tagged task list so reasoning doesn't drift; across sessions or agents, a plain-markdown handoff the next agent re-derives before trusting. |
 | **[Session Measurement](./session-measurement)** | Score an agent session by session and read the trend across versions — so a model / frame / skill change shows up as a real regression or improvement, not a vibe. Six honest counts per session, plain-markdown trend table (optional charts), any agent. |
 | _more coming_ | — |
 
-## Use one
-
-Each skill is a self-contained folder. Drop it where your tool reads skills/commands
-(Claude Code, Cursor, …), or just paste the relevant file into any agent as a prompt. Start with
-each skill's own `README.md`.
-
 ## Install as a Claude plugin
 
-Whetstone is also a Claude plugin marketplace, so you can install these skills directly in Claude
-Code or Cowork:
+Whetstone is a Claude plugin marketplace, so you can install these skills directly in Claude Code
+or Cowork:
 
 ```
 /plugin marketplace add jovesun-lab/whetstone
@@ -44,18 +38,29 @@ Code or Cowork:
 /plugin install throughline@whetstone
 ```
 
-Installed skills are enabled by default and trigger automatically when relevant. Pull future
-updates with `/plugin marketplace update whetstone`.
+Installed skills are enabled by default and trigger automatically when relevant. Pull future updates
+with `/plugin marketplace update whetstone`. Once Whetstone is accepted into Anthropic's plugin
+directory, you'll also be able to find and install these from the in-app Plugins directory
+(Customize ▸ Plugins) without adding the marketplace by hand.
+
+## Use in any other agent
+
+Each skill is a self-contained folder. Drop it where your tool reads skills / commands
+(Claude Code, Cursor, …), or just paste the relevant file into any agent as a prompt. Start with
+each skill's own `README.md`.
 
 ## Token footprint
 
-Built to be cheap to keep installed and modest to use (approximate, tokenizer-dependent):
+Each Whetstone skill is built to be cheap to keep installed and modest to use (per skill,
+approximate, tokenizer-dependent):
 
 - **Installed, idle:** ~250 tokens — only the trigger description sits in context.
-- **A session that writes one handoff:** ~3–5k tokens (skill body + a command + the template + the handoff it writes).
-- **Optional validator:** 0 model tokens — it's a script.
+- **When it fires:** a few thousand tokens — the skill body plus whatever it produces (e.g. a
+  Throughline session that writes one handoff runs ~3–5k).
+- **Optional scripts / validators:** 0 model tokens — they run as code.
 
-On progressive-disclosure hosts (Claude Code, Cursor) you pay the ~250 baseline and spend the rest only when it actually fires — and the trigger is scoped so short, one-pass tasks don't load it at all.
+On progressive-disclosure hosts (Claude Code, Cursor) you pay the ~250 baseline and spend the rest
+only when a skill actually fires — and triggers are scoped so short, one-pass tasks don't load them.
 
 ## License
 
