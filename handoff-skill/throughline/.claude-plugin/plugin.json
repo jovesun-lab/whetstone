@@ -1,6 +1,6 @@
 {
   "name": "throughline",
-  "description": "Keep the thread of work intact \u2014 within a session (Task Track: one \u2b50\ufe0f MAIN goal anchor) and across sessions/agents (Handoff: a plain-markdown doc the next agent re-derives before trusting). For long/multi-session work, not short one-pass tasks.",
+  "description": "Task-Track & Handoff for AI agents on long, multi-session work. Within a session it pins one ⭐️ MAIN goal in an emoji-tagged task list so the agent doesn't drift; across sessions or agents it writes a plain-markdown handoff the next agent re-derives before trusting. Not for short, one-pass tasks.",
   "version": "0.1.1",
   "author": {
     "name": "guxcom"
