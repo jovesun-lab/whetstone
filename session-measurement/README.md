@@ -1,5 +1,7 @@
 # Session Measurement
 
+✅ Open source (MIT)  ·  ✅ Model-agnostic — runs in any agent
+
 *Score an agent's work session by session, and watch the trend — so a change to the model, the frame, or the skills shows up as better or worse, not just "feels different."*
 
 > A small, agent-agnostic [Whetstone](https://github.com/jovesun-lab/whetstone) skill: turn a finished

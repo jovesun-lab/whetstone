@@ -21,11 +21,12 @@ work on-track, high-quality, and easy to hand off.
 
 ## The skills
 
-| Skill | What it does |
-|---|---|
-| **[Throughline](./handoff-skill/throughline)** | Task-Track & Handoff for AI agents on long, multi-session work — within a session, one ⭐️ MAIN goal anchor in an emoji-tagged task list so reasoning doesn't drift; across sessions or agents, a plain-markdown handoff the next agent re-derives before trusting. |
-| **[Session Measurement](./session-measurement)** | Score an agent session by session and read the trend across versions — so a model / frame / skill change shows up as a real regression or improvement, not a vibe. Six honest counts per session, plain-markdown trend table (optional charts), any agent. |
-| _more coming_ | — |
+| Skill | What it does | Works with any AI / model |
+|---|---|---|
+| **[Throughline](./handoff-skill/throughline)** | Task-Track & Handoff for AI agents on long, multi-session work — within a session, one ⭐️ MAIN goal anchor in an emoji-tagged task list so reasoning doesn't drift; across sessions or agents, a plain-markdown handoff the next agent re-derives before trusting. | ✅ Yes — prompt-first, agent-agnostic |
+| **[Session Measurement](./session-measurement)** | Score an agent session by session and read the trend across versions — so a model / frame / skill change shows up as a real regression or improvement, not a vibe. Six honest counts per session, plain-markdown trend table (optional charts), any agent. | ✅ Yes — any agent |
+| **[notify-me](./notify-me)** | Calls you back when an agent needs you — the moment it gets blocked waiting on your decision, it pushes to your phone (via [ntfy](https://ntfy.sh)) and/or chimes on your computer, so you can step away and still know when you're needed. Hook-based, no account, no background process. | ✅ Yes — any agent with hooks |
+| _more coming_ | — | — |
 
 ## Install as a Claude plugin
 
@@ -36,6 +37,7 @@ or Cowork:
 /plugin marketplace add jovesun-lab/whetstone
 /plugin install session-measurement@whetstone
 /plugin install throughline@whetstone
+/plugin install notify-me@whetstone
 ```
 
 Installed skills are enabled by default and trigger automatically when relevant. Pull future updates

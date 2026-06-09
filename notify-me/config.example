@@ -1,0 +1,9 @@
+# notify-me config — copy this to ~/.notify-me/config and edit.
+#   mkdir -p ~/.notify-me && cp config.example ~/.notify-me/config
+# Or just say "set up notify-me" and the setup skill fills it in for you.
+
+TOKEN="CHANGE-ME-to-a-random-secret"   # this IS the ntfy "topic" you subscribe to on your phone (keep it private)
+SOUND="on"                              # on|off — play a sound on this computer
+SOUND_FILE="/System/Library/Sounds/Glass.aiff"   # a file path, or @system for your OS alert sound
+NOTIFY_ON_STOP="off"                    # on|off — also ping when the agent finishes a turn (noisy)
+SERVER="https://ntfy.sh"                # ntfy server; change only if you self-host

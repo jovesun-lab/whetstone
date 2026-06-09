@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 740" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#64748B"/>
+    </marker>
+  </defs>
+
+  <!-- card -->
+  <rect x="6" y="6" width="908" height="728" rx="16" fill="#ffffff" stroke="#E2E8F0" stroke-width="2"/>
+
+  <!-- header -->
+  <text x="32" y="44" font-size="22" font-weight="700" fill="#0F172A">notify-me — how it works</text>
+  <text x="32" y="68" font-size="13" fill="#475569">Calls you back when an agent gets blocked: a push to your phone + a chime on your computer.</text>
+
+  <!-- legend -->
+  <rect x="678" y="22" width="12" height="12" rx="3" fill="#EFF6FF" stroke="#3B82F6"/>
+  <text x="696" y="32" font-size="11" fill="#334155">Setup (once)</text>
+  <rect x="678" y="42" width="12" height="12" rx="3" fill="#F0FDF4" stroke="#16A34A"/>
+  <text x="696" y="52" font-size="11" fill="#334155">Agent at work</text>
+  <rect x="678" y="62" width="12" height="12" rx="3" fill="#FEF3C7" stroke="#D97706"/>
+  <text x="696" y="72" font-size="11" fill="#334155">Needs you</text>
+  <rect x="678" y="82" width="12" height="12" rx="3" fill="#F5F3FF" stroke="#7C3AED"/>
+  <text x="696" y="92" font-size="11" fill="#334155">Alert delivery</text>
+
+  <!-- ===== Setup band ===== -->
+  <text x="32" y="112" font-size="14" font-weight="700" fill="#1E3A8A">1 · Set up once</text>
+
+  <g fill="#1E3A8A" font-size="12" text-anchor="middle">
+    <rect x="30"  y="124" width="185" height="56" rx="8" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.5"/>
+    <text x="122" y="148">Install the<tspan x="122" dy="16">notify-me plugin</tspan></text>
+
+    <rect x="247" y="124" width="185" height="56" rx="8" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.5"/>
+    <text x="339" y="148">Say<tspan x="339" dy="16">&#8220;set up notify-me&#8221;</tspan></text>
+
+    <rect x="464" y="124" width="205" height="56" rx="8" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.5"/>
+    <text x="566" y="148">Pick sound + token,<tspan x="566" dy="16">write ~/.notify-me/config</tspan></text>
+
+    <rect x="701" y="124" width="189" height="56" rx="8" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.5"/>
+    <text x="795" y="148">Phone: install ntfy,<tspan x="795" dy="16">subscribe to your token</tspan></text>
+  </g>
+  <g stroke="#64748B" stroke-width="1.8" marker-end="url(#arr)">
+    <line x1="215" y1="152" x2="245" y2="152"/>
+    <line x1="432" y1="152" x2="462" y2="152"/>
+    <line x1="669" y1="152" x2="699" y2="152"/>
+  </g>
+
+  <!-- ===== Runtime ===== -->
+  <text x="32" y="210" font-size="14" font-weight="700" fill="#15803D">2 · Every time the agent needs you</text>
+
+  <!-- row 1 -->
+  <rect x="30" y="224" width="170" height="56" rx="8" fill="#F0FDF4" stroke="#16A34A" stroke-width="1.5"/>
+  <text x="115" y="248" font-size="12" fill="#14532D" text-anchor="middle">Agent is<tspan x="115" dy="16">working</tspan></text>
+
+  <rect x="232" y="224" width="250" height="56" rx="8" fill="#FEF3C7" stroke="#D97706" stroke-width="1.5"/>
+  <text x="357" y="248" font-size="12" fill="#78350F" text-anchor="middle">It gets blocked —<tspan x="357" dy="16">needs your decision (or finishes)</tspan></text>
+
+  <rect x="514" y="224" width="236" height="56" rx="8" fill="#F0FDF4" stroke="#16A34A" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="632" y="248" font-size="12" fill="#14532D" text-anchor="middle">(optional) note.sh —<tspan x="632" dy="16">leave a plain-words reason</tspan></text>
+
+  <g stroke="#64748B" stroke-width="1.8" marker-end="url(#arr)">
+    <line x1="200" y1="252" x2="230" y2="252"/>
+    <line x1="482" y1="252" x2="512" y2="252"/>
+    <line x1="357" y1="280" x2="360" y2="310"/>
+  </g>
+  <!-- optional note feeds the hook -->
+  <polyline points="632,280 632,296 491,296 491,310" fill="none" stroke="#16A34A" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+
+  <!-- hook -->
+  <rect x="210" y="312" width="300" height="54" rx="8" fill="#F1F5F9" stroke="#475569" stroke-width="1.5"/>
+  <text x="360" y="335" font-size="12" fill="#0F172A" text-anchor="middle" font-weight="600">Hook fires &#8594; notify.sh<tspan x="360" dy="16" font-weight="400">reads ~/.notify-me/config</tspan></text>
+
+  <!-- fork -->
+  <polyline points="360,366 360,388 185,388 185,406" fill="none" stroke="#64748B" stroke-width="1.8" marker-end="url(#arr)"/>
+  <polyline points="360,366 360,388 570,388 570,406" fill="none" stroke="#64748B" stroke-width="1.8" marker-end="url(#arr)"/>
+
+  <!-- computer -->
+  <rect x="70" y="408" width="230" height="54" rx="8" fill="#F5F3FF" stroke="#7C3AED" stroke-width="1.5"/>
+  <text x="185" y="431" font-size="12" fill="#4C1D95" text-anchor="middle">Sound chimes on<tspan x="185" dy="16">your computer</tspan></text>
+
+  <!-- phone path -->
+  <rect x="420" y="408" width="300" height="54" rx="8" fill="#F5F3FF" stroke="#7C3AED" stroke-width="1.5"/>
+  <text x="570" y="431" font-size="12" fill="#4C1D95" text-anchor="middle">curl push &#8594;<tspan x="570" dy="16">ntfy.sh/your-token</tspan></text>
+
+  <line x1="570" y1="462" x2="570" y2="490" stroke="#64748B" stroke-width="1.8" marker-end="url(#arr)"/>
+  <rect x="420" y="492" width="300" height="44" rx="8" fill="#EEF2FF" stroke="#6366F1" stroke-width="1.5"/>
+  <text x="570" y="519" font-size="12" fill="#3730A3" text-anchor="middle">ntfy relays via Apple / Google push</text>
+
+  <line x1="570" y1="536" x2="570" y2="564" stroke="#64748B" stroke-width="1.8" marker-end="url(#arr)"/>
+  <rect x="420" y="566" width="300" height="54" rx="8" fill="#FDF4FF" stroke="#A21CAF" stroke-width="1.5"/>
+  <text x="570" y="589" font-size="12" fill="#701A75" text-anchor="middle">Your phone buzzes —<tspan x="570" dy="16">shows the agent's message</tspan></text>
+
+  <!-- converge to outcome -->
+  <rect x="300" y="652" width="300" height="52" rx="8" fill="#ECFDF5" stroke="#059669" stroke-width="1.8"/>
+  <text x="450" y="683" font-size="13" font-weight="700" fill="#064E3B" text-anchor="middle">You step back to the work</text>
+
+  <polyline points="185,462 185,678 298,678" fill="none" stroke="#64748B" stroke-width="1.8" marker-end="url(#arr)"/>
+  <line x1="570" y1="620" x2="570" y2="650" stroke="#64748B" stroke-width="1.8" marker-end="url(#arr)"/>
+</svg>

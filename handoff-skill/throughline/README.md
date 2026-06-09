@@ -1,5 +1,7 @@
 # Throughline
 
+✅ Open source (MIT)  ·  ✅ Model-agnostic — runs in any agent
+
 *Keep the thread — within a session, and across them.*
 
 A small, agent-agnostic skill that keeps work **on-thread** — within a single session, and

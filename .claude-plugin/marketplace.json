@@ -14,16 +14,52 @@
       "source": "./session-measurement",
       "description": "Measure an AI agent's per-session performance on a small, stable metric set and track it as a trend over a long run, so a model / frame / skill change shows up as a real regression or improvement. Plain-markdown trend table (canonical, zero-dependency); optional chart renderer.",
       "version": "0.1.0",
-      "author": { "name": "guxcom" },
-      "keywords": ["agent-benchmark", "performance-trend", "session-measurement", "ai-agents", "regression-tracking", "evaluation"]
+      "author": {
+        "name": "guxcom"
+      },
+      "keywords": [
+        "agent-benchmark",
+        "performance-trend",
+        "session-measurement",
+        "ai-agents",
+        "regression-tracking",
+        "evaluation"
+      ]
     },
     {
       "name": "throughline",
       "source": "./handoff-skill/throughline",
-      "description": "Task-Track & Handoff for AI agents on long, multi-session work. Within a session it pins one ⭐️ MAIN goal in an emoji-tagged task list so the agent doesn't drift; across sessions or agents it writes a plain-markdown handoff the next agent re-derives before trusting. Not for short, one-pass tasks.",
+      "description": "Task-Track & Handoff for AI agents on long, multi-session work. Within a session it pins one \u2b50\ufe0f MAIN goal in an emoji-tagged task list so the agent doesn't drift; across sessions or agents it writes a plain-markdown handoff the next agent re-derives before trusting. Not for short, one-pass tasks.",
       "version": "0.1.1",
-      "author": { "name": "guxcom" },
-      "keywords": ["handoff", "session-continuity", "task-tracking", "ai-agents", "anti-drift"]
+      "author": {
+        "name": "guxcom"
+      },
+      "keywords": [
+        "handoff",
+        "session-continuity",
+        "task-tracking",
+        "ai-agents",
+        "anti-drift"
+      ]
+    },
+    {
+      "name": "notify-me",
+      "source": "./notify-me",
+      "description": "Calls you back when an agent needs you. The moment an agent gets blocked waiting on your decision, it pushes a notification to your phone (via ntfy) and/or plays a sound on your computer, so you can step away and still know when you're needed. Hook-based, no account, no background process.",
+      "version": "0.1.0",
+      "author": {
+        "name": "guxcom"
+      },
+      "keywords": [
+        "notification",
+        "ntfy",
+        "alert",
+        "away",
+        "hook",
+        "push",
+        "afk",
+        "reminder"
+      ]
     }
   ]
 }
