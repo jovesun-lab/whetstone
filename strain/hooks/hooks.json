@@ -1,0 +1,20 @@
+{
+  "description": "strain: counts tool calls per session and fires the strain check on its own; opens each session's counter and carries a compaction as escalation.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/_strain_tick.py\"", "timeout": 10 }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/_strain_reset.py\"", "timeout": 10 }
+        ]
+      }
+    ]
+  }
+}

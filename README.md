@@ -26,6 +26,7 @@ work on-track, high-quality, and easy to hand off.
 | **[Throughline](./handoff-skill/throughline)** | Task-Track & Handoff for AI agents on long, multi-session work — within a session, one ⭐️ MAIN goal anchor in an emoji-tagged task list so reasoning doesn't drift; across sessions or agents, a plain-markdown handoff the next agent re-derives before trusting. | ✅ Yes — prompt-first, agent-agnostic |
 | **[Session Measurement](./session-measurement)** | Score an agent session by session and read the trend across versions — so a model / frame / skill change shows up as a real regression or improvement, not a vibe. Six honest counts per session, plain-markdown trend table (optional charts), any agent. | ✅ Yes — any agent |
 | **[notify-me](./notify-me)** | Calls you back when an agent needs you — the moment it gets blocked waiting on your decision, it pushes to your phone (via [ntfy](https://ntfy.sh)) and/or chimes on your computer, so you can step away and still know when you're needed. Hook-based, no account, no background process. | ✅ Yes — any agent with hooks |
+| **[strain](./strain)** | Tells you when a session has gone bad — before its answers do. Counts how loaded *one* conversation has become and makes the agent report it as a tier on a schedule it can't quietly skip, so you wrap before the work degrades. Reads the real context size where the host exposes one, and says so plainly where it doesn't. | ✅ Yes — prompt-first; auto-fires with hooks |
 | _more coming_ | — | — |
 
 ## Install as a Claude plugin
@@ -38,6 +39,7 @@ or Cowork:
 /plugin install session-measurement@whetstone
 /plugin install throughline@whetstone
 /plugin install notify-me@whetstone
+/plugin install strain@whetstone
 ```
 
 Installed skills are enabled by default and trigger automatically when relevant. Pull future updates

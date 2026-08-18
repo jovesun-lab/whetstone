@@ -60,6 +60,24 @@
         "afk",
         "reminder"
       ]
+    },
+    {
+      "name": "strain",
+      "source": "./strain",
+      "description": "A session-strain meter for long agent sessions. Counts how loaded a single conversation has become and makes the agent report it on its own, on a schedule it cannot quietly skip, so you find out that a session should be wrapped before its answers start degrading. Reads the real context size on hosts that expose one, and says so plainly when it cannot.",
+      "version": "0.1.0",
+      "author": {
+        "name": "guxcom"
+      },
+      "keywords": [
+        "session-strain",
+        "context-window",
+        "agent-operating-frame",
+        "handoff",
+        "hook",
+        "long-sessions",
+        "ai-agents"
+      ]
     }
   ]
 }
