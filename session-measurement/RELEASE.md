@@ -1,6 +1,24 @@
-# Session Measurement v0.1.0
+# Session Measurement v0.1.1
 
 *Score an agent session by session; read the trend across versions.*
+
+## What's new in 0.1.1
+
+Alignment with its Whetstone siblings — the metric spine is untouched:
+
+- **Verdict vocabulary unified with Throughline 0.2.0.** `MAIN landed`'s `L / P / N` is the
+  same enum Throughline uses at goal close (`LANDED / PARTIAL / NOT-LANDED`, under the goal's
+  frozen title, with evidence). If the project writes Throughline handoffs, the Done section's
+  verdicts are a ready-made, already-grounded source for this attribute — read, don't re-derive.
+- **New optional attribute: `strain tier at wrap`** (`Healthy / Mid / High / Warning / Danger`,
+  from the strain skill's wrap reading). An attribute like `version`, not a spine metric — it
+  lets the trend answer "do the bad sessions correlate with running long?" without changing
+  what is measured. Omit it if the project doesn't run strain.
+- License attribution → arcgram.io.
+
+---
+
+# Session Measurement v0.1.0 (original release)
 
 **A tiny, agent-agnostic skill that turns each finished session into a small set of honest counts and tracks them as a long-run trend — so a change to the model, the frame, or the skills shows up as a real regression or improvement, not a vibe.**
 

@@ -54,13 +54,23 @@ is worse). Plus two per-session attributes (version, main-goal outcome).
 | Critical bugs — agent caught | green | **severe** defects (see below) the agent caught itself |
 | Critical bugs — human caught | red | severe defects that slipped to the human |
 
-Two attributes carried alongside:
+Two attributes carried alongside (plus one optional):
 - **version** — which model / frame / build the session ran on (so trouble reads against version).
 - **MAIN landed** — did the session's main goal land? `L` landed · `P` partial (reframed,
   shipped-with-a-regression, or one-of-two) · `N` not-landed (nothing shipped, reverted,
   or the session never wrapped). This is the task-completion signal. (A raw
   tasks-done/total rate is near-100% every clean session and tells you nothing — whether
   the *goal* landed is the discriminating signal.)
+  `L / P / N` is the same verdict vocabulary our companion skill
+  [Throughline](../../../handoff-skill/throughline) uses when a goal closes
+  (`LANDED / PARTIAL / NOT-LANDED`, under its frozen title, evidence attached). If the
+  project writes Throughline handoffs, the **Done** section's verdicts are a ready-made,
+  already-grounded source for this attribute — read them instead of re-deriving.
+- **strain tier at wrap** *(optional)* — how loaded the session was when it closed
+  (`Healthy / Mid / High / Warning / Danger`), read from the
+  [strain](../../../strain) skill's wrap reading if the project runs it. Not a spine
+  metric — an attribute, like version: it lets the trend answer "do the bad sessions
+  correlate with running long?" without changing what is measured. Omit if not tracked.
 
 **"Critical" — the severe tier (default; a project may extend it in config):**
 1. **Task forgetting** — a committed or in-progress task silently dropped.
@@ -119,8 +129,9 @@ When asked to measure a session:
    specific moment (which redefinition, which self-catch, which miss) — if you can't point
    at it, don't count it.
 4. **Ground against the authoritative record** if `grounding_source` exists (a work log or
-   status log, a task tracker, a status doc). Don't trust your own first read or a stale snapshot;
-   reconcile. Note where grounding changed a count.
+   status log, a task tracker, a status doc — or a Throughline handoff, whose per-goal
+   verdicts map directly onto `MAIN landed`). Don't trust your own first read or a stale
+   snapshot; reconcile. Note where grounding changed a count.
 5. **Record it in the markdown log (canonical, zero-dependency).** Add the session's column
    to the markdown trend table and write a short per-session paragraph — what landed, the
    notable catch, the honest miss (`references/log-template.md` shows the structure). This

@@ -1,9 +1,9 @@
 {
   "name": "session-measurement",
   "description": "Measure an AI agent's per-session performance on a small, stable metric set and track it as a trend over a long run, so you can tell whether a change — a new model version, a new operating frame, a new skill set — actually improved the agent or regressed it. Records a plain-markdown trend table (canonical, zero-dependency); an optional script renders charts. Reach for it to benchmark, score, grade, or A/B an agent across sessions.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
-    "name": "guxcom"
+    "name": "arcgram.io"
   },
   "homepage": "https://github.com/jovesun-lab/whetstone/tree/main/session-measurement",
   "repository": "https://github.com/jovesun-lab/whetstone",

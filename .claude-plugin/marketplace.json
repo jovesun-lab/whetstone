@@ -1,8 +1,8 @@
 {
   "name": "whetstone",
   "owner": {
-    "name": "guxcom",
-    "url": "https://guxcom.io"
+    "name": "arcgram.io",
+    "url": "https://arcgram.io"
   },
   "metadata": {
     "description": "Small, sharp, agent-agnostic skills that keep an AI agent's work honest.",
@@ -13,9 +13,9 @@
       "name": "session-measurement",
       "source": "./session-measurement",
       "description": "Measure an AI agent's per-session performance on a small, stable metric set and track it as a trend over a long run, so a model / frame / skill change shows up as a real regression or improvement. Plain-markdown trend table (canonical, zero-dependency); optional chart renderer.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
-        "name": "guxcom"
+        "name": "arcgram.io"
       },
       "keywords": [
         "agent-benchmark",
@@ -29,10 +29,10 @@
     {
       "name": "throughline",
       "source": "./handoff-skill/throughline",
-      "description": "Task-Track & Handoff for AI agents on long, multi-session work. Within a session it pins one \u2b50\ufe0f MAIN goal in an emoji-tagged task list so the agent doesn't drift; across sessions or agents it writes a plain-markdown handoff the next agent re-derives before trusting. Not for short, one-pass tasks.",
-      "version": "0.1.1",
+      "description": "Task-Track & Handoff for AI agents on long, multi-session work. Within a session it pins one \u2b50\ufe0f MAIN goal (frozen title, explicit verdict at close) in an emoji-tagged task list so the agent doesn't drift; across sessions or agents it writes a plain-markdown handoff the next agent re-derives before trusting. Not for short, one-pass tasks.",
+      "version": "0.2.0",
       "author": {
-        "name": "guxcom"
+        "name": "arcgram.io"
       },
       "keywords": [
         "handoff",
@@ -46,9 +46,9 @@
       "name": "notify-me",
       "source": "./notify-me",
       "description": "Calls you back when an agent needs you. The moment an agent gets blocked waiting on your decision, it pushes a notification to your phone (via ntfy) and/or plays a sound on your computer, so you can step away and still know when you're needed. Hook-based, no account, no background process.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
-        "name": "guxcom"
+        "name": "arcgram.io"
       },
       "keywords": [
         "notification",
@@ -67,7 +67,7 @@
       "description": "A session-strain meter for long agent sessions. Counts how loaded a single conversation has become and makes the agent report it on its own, on a schedule it cannot quietly skip, so you find out that a session should be wrapped before its answers start degrading. Reads the real context size on hosts that expose one, and says so plainly when it cannot.",
       "version": "0.1.0",
       "author": {
-        "name": "guxcom"
+        "name": "arcgram.io"
       },
       "keywords": [
         "session-strain",

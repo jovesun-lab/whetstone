@@ -10,6 +10,10 @@ point-in-time snapshot, and trusting it blindly is exactly how drift creeps in.
 
 1. **Load and orient.** Read the handoff (from the given path, or from what the user pasted).
    Restate the ⭐️ Goal back to the user in one line so they can see you've oriented correctly.
+   **A gap in the handoff is a finding — say it.** Missing doc, stale date, a goal with no
+   verdict, a thin re-derive section: each is evidence about how the last session ended.
+   Surface it out loud instead of silently patching around it — the protocol self-heals only
+   when the pickup side reports what the wrap side skipped.
 
 2. **Re-derive before trusting.** Work through the handoff's "Re-derive on pickup" section. For
    each named item, reconcile the snapshot against ground truth using whatever access you have:
@@ -20,11 +24,15 @@ point-in-time snapshot, and trusting it blindly is exactly how drift creeps in.
    what you could not verify** — don't paper over the gap.
 
 3. **Set up Task Track.** Create a task list with the carried-forward ⭐️ MAIN as the goal anchor
-   (exactly one), and tag the open threads from the handoff by origin (🌶️ / 🍏 / 🍋). See
-   `references/task-track.md`.
+   (exactly one, under its frozen title), and tag the open threads from the handoff by origin
+   (🌶️ / 🍏 / 🍋). See `references/task-track.md`.
 
-4. **Confirm, then execute.** Before doing load-bearing work, confirm the plan and the ⭐️ MAIN
-   with the user — the top-of-queue item in the handoff may not still be the right next move.
+4. **Propose, then execute on a one-word confirm.** End your orientation by proposing the
+   handoff's top Open / Next item as a concrete action — *"Highest priority is X — want me to
+   start?"* — with the rest of the queue visible so the user can redirect. Don't end on an open
+   "what would you like to work on?": that forces the user to ask what's highest and *then*
+   confirm it — two turns where one would do. The proposal is a default, not a lock; any
+   redirect from the user wins.
 
 If anything in the handoff contradicts ground truth when you re-derive, trust ground truth and
 say so — the handoff was written before the world moved.

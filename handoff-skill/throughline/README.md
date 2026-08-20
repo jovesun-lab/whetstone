@@ -20,15 +20,35 @@ It packages two linked habits:
 holds it *within* a run; the handoff's **⭐️ Goal** carries it *across* runs. One sentence:
 **don't lose the thread — within a session, or between them.**
 
+**New in 0.2.0** — disciplines extracted from another year of daily use:
+
+- **Frozen titles & verdicts.** A goal's title freezes when it's confirmed, and it closes under
+  that name with an explicit `LANDED / PARTIAL / NOT-LANDED` (evidence attached; silence is not
+  a verdict). A redirect **appends** a new goal — it never rewrites the old one.
+- **One boot = one session** — however many wrap-ups happen inside it; name the session early
+  and let the handoff carry the name.
+- **Two-box checklists** — `built` and `verified` tick separately; `verified` only after the
+  named check actually ran.
+- **Decisions, numbered and append-only** — a handoff section that ends re-litigating.
+- **Atomic wraps** — work landing after the handoff was written makes it stale; re-run the wrap.
+- **Gaps are findings** — the resume side reports what the wrap side skipped, out loud.
+- **Multi-agent rules** — one writer per shared artifact; the docs, not chat history, are the
+  coordination channel.
+- **A companion meter** — [strain](../../strain) says *when* to wrap; Throughline is *how*.
+
 ## How the two halves connect
 
 ![Logic flow — how Task Track and Handoff share one goal anchor](assets/logic-flow.svg)
 
 > A single, self-contained SVG — opens in any browser or Markdown viewer, nothing to install.
+> There's also an **[interactive version](assets/throughline-flow.html)** (open the HTML in a
+> browser: hover any node for the full discipline behind it). Both are drawn with
+> [Arcgram](https://arcgram.io) — the project Throughline's disciplines were lived on before
+> they were extracted here — the SVG via the engine's own export.
 
-The red path is the thread: a session's ⭐️ MAIN is written into the handoff's ⭐️ Goal (🔑1),
-picked up by the next session (🔑2), re-derived against ground truth (🔑3), and carried forward
-as the next ⭐️ MAIN (🔑4) — which loops back (dashed) to begin the cycle again.
+The thread runs: a session's ⭐️ MAIN is written into the handoff's ⭐️ Goal, picked up by the
+next session, re-derived against ground truth, and carried forward as the next ⭐️ MAIN — which
+loops back to begin the cycle again.
 
 ## What's in here
 
@@ -40,10 +60,11 @@ as the next ⭐️ MAIN (🔑4) — which loops back (dashed) to begin the cycle
 | `commands/resume.md` | The **read** operation: pick up a handoff and re-derive before trusting it. |
 | `templates/handoff.template.md` | The single source of truth for a handoff's structure. |
 | `references/task-track.md` | The within-session discipline, in depth. |
-| `references/handoff.md` | The across-session protocol (the five anti-drift mechanisms), in depth. |
+| `references/handoff.md` | The across-session protocol (the seven anti-drift mechanisms + the multi-agent rules), in depth. |
 | `examples/example-handoff.md` | A filled-in handoff to copy the shape from. |
 | `tools/handoff.py` | Optional, zero-dependency helper (scaffold + validate). |
-| `assets/logic-flow.svg` | The diagram above. |
+| `assets/logic-flow.svg` | The diagram above (SVG export of the Arcgram flow). |
+| `assets/throughline-flow.html` | The same diagram, interactive (Arcgram flow — hover nodes for the full disciplines). |
 
 ## Use it
 
