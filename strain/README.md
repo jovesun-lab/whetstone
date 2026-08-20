@@ -128,10 +128,13 @@ them; the readout prints the ones it used.
 - **A tier that never moves is a broken check, not a healthy session.** The counting is the
   work.
 - **Nothing is sent anywhere.** State and the model log are local files you can open.
-- **One honest limitation:** whether a host *surfaces* the tick to the agent is a separate
-  question from whether the hook ran. Loading is easy to verify (the state file appears and
-  the count advances); surfacing is not, and on a host that swallows injected context the
-  tick becomes a no-op. If you never see a strain readout, check that first.
+- **One honest limitation, partially closed:** whether a host *surfaces* the tick to the
+  agent is a separate question from whether the hook ran. Loading is easy to verify (the
+  state file appears and the count advances); surfacing is not. **Verified on Claude
+  Code and on Cowork (2026-08-20, by observation — the injected text appeared in the
+  agent's context and changed its behaviour): `hookSpecificOutput.additionalContext` on
+  stdout IS surfaced; plain stderr/stdout prose is not.** On other hosts this remains
+  unverified — if you never see a strain readout, check the channel first.
 
 ## Companion
 
