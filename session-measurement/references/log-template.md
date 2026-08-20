@@ -15,6 +15,7 @@ paragraph per session, with the chart image embedded. This is what you append to
 | change/note | tag1 | tag2 | ... |
 | version | v0.1 | v0.2 | ... |
 | MAIN landed (L/P/N) | L | P | ... |
+| strain at wrap (optional) | Healthy | High | ... |
 | Redefinitions absorbed | 3 | 2 | ... |
 | Clarifying gates raised | 2 | 2 | ... |
 | Errors self-caught | 2 | 1 | ... |

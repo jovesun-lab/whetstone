@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "description": "Calls you back when an agent needs you. The moment an agent gets blocked waiting on your decision, notify-me pushes a notification to your phone (via ntfy) and/or plays a sound on your computer \u2014 so you can step away and still know when you're needed. Works with any agent that supports plugin hooks. No account, no background process.",
   "author": {
-    "name": "guxcom"
+    "name": "arcgram.io"
   },
   "keywords": [
     "notification",

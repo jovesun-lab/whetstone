@@ -1,6 +1,6 @@
 # Handoff — competitor pricing teardown for the Q3 strategy memo
 
-_Written 2025-08-12 14:40 · for: finishing the pricing comparison and drafting the recommendation_
+_Written 2025-08-12 14:40 · by session `q3-pricing-teardown 12-08-25` · for: finishing the pricing comparison and drafting the recommendation_
 
 ## ⭐️ Goal
 
@@ -18,9 +18,16 @@ finish.
 
 ## Done
 
+- **Goal verdict — "Produce the pricing-comparison section …": NOT-LANDED.** The table is 3/4
+  drafted and the recommendation is unwritten; the whole goal carries forward (Open / Next #1–3).
 - Comparison table drafted for 3/4 competitors in the shared sheet.
 - Feature-to-price mapping for the "Team" tier across A, B, and C.
 - Notes on each competitor's discounting pattern.
+
+## Decisions
+
+- D1. Normalize all plans to **per-seat / month, billed annually, USD** (memo owner, 08-11).
+- D2. Scope is the **four main competitors only** — no long-tail vendors this quarter (08-11).
 
 ## Open / Next
 

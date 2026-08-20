@@ -36,8 +36,14 @@ Six counts per session (green = strength, higher is better; red = weakness, high
 | Critical bugs — agent caught | green | **severe** defects the agent caught itself |
 | Critical bugs — human caught | red | severe defects that slipped to the human |
 
-Plus two attributes per session: **version** (which model/frame/build it ran on — so trouble reads
-against version) and **MAIN landed** (`L`/`P`/`N` — did the session's main goal land).
+Plus two attributes per session — **version** (which model/frame/build it ran on — so trouble reads
+against version) and **MAIN landed** (`L`/`P`/`N` — did the session's main goal land) — and one
+optional third, **strain tier at wrap** (`Healthy…Danger`, from the [strain](../strain) skill, so the
+trend can answer "do bad sessions correlate with running long?").
+
+`L`/`P`/`N` is the same verdict vocabulary [Throughline](../handoff-skill/throughline) uses to close
+goals (`LANDED / PARTIAL / NOT-LANDED`, frozen title, evidence attached) — if the project writes
+Throughline handoffs, the Done section's verdicts are a ready-made grounding source for this column.
 
 **"Critical" = severe, not a craft nit.** Defaults: a committed task silently forgotten; a
 previously-fixed bug recurring 2+ times; a bug that breaks a working feature (dead-loop). Each project
@@ -119,4 +125,4 @@ MIT. Free to use, modify, embed, redistribute.
 
 ---
 
-*A [Whetstone](https://github.com/jovesun-lab/whetstone) skill by [guxcom](https://guxcom.io).*
+*A [Whetstone](https://github.com/jovesun-lab/whetstone) skill by [arcgram.io](https://arcgram.io).*

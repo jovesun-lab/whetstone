@@ -1,6 +1,41 @@
-# Throughline v0.1.0
+# Throughline v0.2.0
 
 *Keep the thread — within a session, and across them.*
+
+## What's new in 0.2.0
+
+Disciplines extracted from another year of daily multi-session use — each one closes a
+failure that actually happened:
+
+- **Frozen titles.** A goal's title freezes when it's confirmed and it closes under that
+  same name — a MAIN renamed into whatever actually happened makes "done" unfalsifiable.
+- **Verdicts, with evidence.** Every goal closes `LANDED` (evidence attached) / `PARTIAL` /
+  `NOT-LANDED` (carried forward, visibly). Silence is not a verdict.
+- **Redirects append.** A redirected goal takes an honest NOT-LANDED; the new direction is a
+  new entry. The append trail is the proof that every shift was agreed, not drift.
+- **One boot = one session.** However many wrap-ups happen inside a conversation; anything
+  that counts sessions counts boots. Name the session early; the handoff header carries it.
+- **Two-box checklists.** `built` and `verified` tick separately — `verified` only after the
+  named check actually ran.
+- **Decisions section.** Numbered, append-only — ends re-litigating and chat-log archaeology.
+- **Atomic wraps.** Work landing after the handoff was written makes it stale; re-run the wrap.
+- **Gaps are findings.** The resume side reports what the wrap side skipped, out loud.
+- **Expected results in Re-derive.** "Run X, expect Y" — a named check with no expected value
+  can't tell the next agent whether the world moved.
+- **Multi-agent rules.** One writer per shared artifact; workstream owners write their own
+  work-package docs; the docs — not chat history — are the coordination channel.
+- **Companion: [strain](../../strain).** Strain says *when* to wrap; Throughline is *how*.
+- **New working-principle diagram** — drawn with [Arcgram](https://arcgram.io) as an
+  interactive flow (`assets/throughline-flow.html`), exported to `assets/logic-flow.svg`
+  with the engine's own SVG export.
+
+Template change note: handoffs now have a **Decisions** section and a session-name header;
+`handoff.py check` reads sections from the template, so it enforces the new shape
+automatically — older handoffs will need the new section to pass.
+
+---
+
+# Throughline v0.1.0 (original release)
 
 **A tiny, agent-agnostic skill that keeps work on-thread — within a session, and across the seam between sessions or agents. (Task Track + Handoff.)**
 

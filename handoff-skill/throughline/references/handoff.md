@@ -19,15 +19,23 @@ A handoff is a short markdown document — *latest state plus pointers*, never a
 Its structure is fixed by the shared template, [`../templates/handoff.template.md`](../templates/handoff.template.md),
 which is the single source of truth for what sections a handoff has. The sections:
 
-- **⭐️ Goal** — the one thing the next session is for (the carried-forward MAIN).
+- **Header** — names the session that wrote this (session name + id, if the host exposes one),
+  so every claim in the doc traces back to the session that made it.
+- **⭐️ Goal** — the one thing the next session is for (the carried-forward MAIN), under its
+  frozen title.
 - **State** — where things stand now; unverified items marked as such.
-- **Done** — what was completed, briefly.
+- **Done** — what was completed, briefly — **each goal closed with an explicit verdict**
+  (`LANDED` with evidence / `PARTIAL` / `NOT-LANDED` with where it's carried), under the title
+  it was confirmed with. Silence is not a verdict.
+- **Decisions** — what the human confirmed this session, numbered, append-only. Kills
+  re-litigating and chat-log archaeology.
 - **Open / Next** — open threads and the recommended next move, prioritized.
-- **Re-derive on pickup** — what to reconcile against ground truth before trusting the doc.
+- **Re-derive on pickup** — what to reconcile against ground truth before trusting the doc,
+  each check named **with its expected result**.
 - **Suggested next steps / tools / skills** — concrete next actions and capabilities to reach for.
 - **References** — pointers to plans, specs, issues, commits, diffs, docs, by path or URL.
 
-## The five anti-drift mechanisms
+## The seven anti-drift mechanisms
 
 These are *why* the handoff is shaped the way it is. Each one closes a specific failure mode.
 
@@ -53,10 +61,25 @@ These are *why* the handoff is shaped the way it is. Each one closes a specific 
   history. It must not grow into a second running log — a bloated handoff is one nobody reads,
   which drops the thread just as surely as having none.
 
-- **Write it in one step.** When you wrap up, write the whole handoff — including the verification
-  baseline ("re-derive against *this* check, expecting *these* numbers") — in one pass. If the
-  state and its baseline are written separately, they drift apart, and the next session re-derives
-  against a stale target.
+- **Write it in one step — and re-write it if work resumes.** When you wrap up, write the whole
+  handoff — including the verification baseline ("re-derive against *this* check, expecting
+  *these* numbers") — in one pass. If the state and its baseline are written separately, they
+  drift apart, and the next session re-derives against a stale target. And the wrap is **atomic
+  with the end of the work**: if a "wait, one more thing" lands *after* the handoff was written,
+  the snapshot is stale — re-run the wrap and capture the new state. A stale handoff is worse
+  than none: none makes the next session derive from scratch; stale makes it derive from a lie.
+
+- **Close with a verdict, under the frozen name.** Every goal the session carried gets an
+  explicit `LANDED` / `PARTIAL` / `NOT-LANDED` in Done — landed with the evidence, not-landed
+  with where it's carried (it must reappear in Open / Next). The verdict is given to the goal's
+  *frozen title*, never to a renamed version of it. This closes the quietest failure mode of
+  all: the session that ends with everything vaguely "done" and nothing actually landed.
+
+- **A skipped step is caught at the next pickup.** The protocol is self-healing *if* the resume
+  side treats gaps as findings: a missing handoff, a stale date, an absent verdict, a thin
+  re-derive section — each is evidence about how the last session ended, and it should be said
+  out loud, not silently papered over. Every skip at wrap is caught by the next session's
+  pickup — but only when the pickup actually looks.
 
 ## Writing a handoff
 
@@ -71,6 +94,28 @@ handoff is a snapshot from before the world moved. Re-read the named artifacts, 
 checks, re-confirm cited facts. Where the snapshot and ground truth disagree, ground truth wins —
 and say so. This read-side discipline is the half a write-only handoff tool leaves out, and it's
 where most "the next session built on a stale fact" failures actually happen.
+
+## When more than one agent works the project
+
+Throughline's single-file handoff covers the relay case: one session ends, the next picks up.
+When **several agents (or several substrates of the same agent) work one project in parallel**,
+three more rules keep the thread from forking:
+
+- **Every shared artifact has exactly one writer.** The project's central record (the handoff,
+  the log) is owned by one agent; the others never write it. Each non-owner keeps its **own
+  progress note** — one line per work stint, newest first: date, who, what moved, what's next —
+  and the owner folds those in at its wrap. Two writers on one record is how the same fact ends
+  up with two values.
+- **The workstream's owner writes its briefs.** Split parallel work into work packages, each
+  owned by the agent doing it; the owner writes the package's doc (its decisions, its checklist
+  rows with `built / verified` boxes, its progress log). Ownership of the work and authorship of
+  its record travel together.
+- **The doc is the coordination channel.** No agent should need another agent's chat history —
+  everything that crosses the seam crosses in the artifact. If two agents can't coordinate
+  through the files alone, the files are missing something; fix the files.
+
+This is the same discipline as the rest of the skill at one more scale: single source of truth,
+per artifact, with named ownership.
 
 ## Why both halves, together
 

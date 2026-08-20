@@ -60,7 +60,23 @@ if your task UI renders badges, use those too, but the title is the reliable cha
 **The discipline, not the decoration:** the value isn't the emoji, it's that the trajectory
 becomes legible. At any moment you can scan the list and see whether the work is still on the
 main line or chasing transients. When a 🍏 keeps growing, that's the signal to stop and check it
-against the ⭐️ MAIN.
+against the ⭐️ MAIN. A 🍏 that proves valuable and gets logged is *promoted* to 🍋 — visible
+scope management instead of silent absorption.
+
+Four rules keep the anchor honest over time:
+
+- **The MAIN's title freezes when it's confirmed, and it closes under that same name.** A goal
+  renamed into whatever actually happened makes "done" unfalsifiable. A MAIN that became
+  something else is a **redirect, not a rename**: the original takes an honest not-landed close,
+  the new direction becomes its own new entry. **Redirects append; they never rewrite.**
+- **One boot = one session.** However many wrap-ups happen inside a conversation, it stays one
+  session — a new task after a wrap is the same session's *second* MAIN, not a new session.
+  Anything that counts sessions (trend tables, numbered handoffs) counts boots.
+- **Name the session early.** Give it a short stable name when the task crystallizes — alongside
+  the ⭐️ MAIN, not at wrap time — and keep it visible; the handoff carries it.
+- **Checklist rows get two boxes: `built` and `verified`.** `verified` ticks only after the
+  *named* check actually ran — "done" and "checked" are different claims and must not travel in
+  one checkbox.
 
 Full rationale, examples, and how it pairs with Handoff: `references/task-track.md`.
 
@@ -76,12 +92,16 @@ can read plain markdown.
 
 1. **Fill the shared template** `templates/handoff.template.md`. It is the single source of truth
    for a handoff's structure; do not invent your own sections. The core sections:
-   - **⭐️ Goal** — the one thing the next session is for (carry the MAIN forward).
+   - **Header** — which session wrote this (session name + id): every claim traces back.
+   - **⭐️ Goal** — the one thing the next session is for (carry the MAIN forward, frozen title).
    - **State** — where things stand now; mark anything unverified.
-   - **Done** — what got completed (briefly).
+   - **Done** — what got completed (briefly), each goal closed with an explicit verdict —
+     `LANDED` (with evidence) / `PARTIAL` / `NOT-LANDED` (with where it's carried). Silence is
+     not a verdict.
+   - **Decisions** — what the human confirmed, numbered, append-only ("none" if none).
    - **Open / Next** — open threads + recommended next move, in priority order.
    - **Re-derive on pickup** — what the next agent must reconcile against ground truth before
-     trusting this doc.
+     trusting this doc: each check named, with its expected result.
    - **Suggested next steps / tools / skills** — concrete next actions and capabilities to reach for.
    - **References** — point to plans, specs, issues, commits, diffs, docs by path/URL.
 2. **Reference, don't duplicate.** If a fact already lives in a plan, issue, commit, or diff,
@@ -92,19 +112,43 @@ can read plain markdown.
    into a second log.
 5. **Save it where the next agent will look** — if you can write files, the OS temp dir or an
    agreed handoff path; if you can't, just emit the doc inline in your reply.
+6. **The wrap is atomic with the end of the work.** If more work lands after the handoff was
+   written, the snapshot is stale — re-run the wrap. A stale handoff misleads the next session
+   worse than none.
 
 **Resuming from a handoff** (the `resume` operation — see `commands/resume.md`):
 
-1. Read the handoff and restate the ⭐️ Goal back, so the human sees you've oriented.
+1. Read the handoff and restate the ⭐️ Goal back, so the human sees you've oriented. **A gap in
+   the handoff is a finding** — a missing doc, stale date, or absent verdict is evidence about
+   how the last session ended; say it out loud, don't silently patch around it. That report is
+   what makes a skipped wrap step get *caught* instead of compounding.
 2. **Re-derive before trusting.** Follow the doc's "Re-derive on pickup" section: re-read the
    named artifacts, re-run the named check, re-confirm cited facts are still current. A snapshot
    trusted blindly is exactly how stale state causes drift.
-3. Set up Task Track with the carried-forward ⭐️ MAIN, then confirm the plan before executing.
+3. Set up Task Track with the carried-forward ⭐️ MAIN (frozen title), then **end your
+   orientation by proposing the top Open / Next item as a concrete action for a one-word
+   confirm** — queue visible, no open-ended "what should we work on?". The proposal is a
+   default, not a lock.
 
-Full protocol, the five anti-drift mechanisms, and why each exists:
+**When several agents work the project in parallel** (two substrates, a swarm, an auditor):
+every shared artifact gets exactly **one writer**; non-owners keep their own progress notes and
+the owner folds them in at its wrap; the workstream's owner writes its own work-package docs;
+and the docs — not anyone's chat history — are the coordination channel. Details:
+`references/handoff.md`.
+
+Full protocol, the seven anti-drift mechanisms, and why each exists:
 `references/handoff.md`.
 
 ---
+
+## Companion: strain (when to wrap)
+
+Throughline is *how* to keep and hand off the thread; its companion skill
+[strain](../../../../strain) is *when* — a session-strain meter that reads how loaded the
+conversation has become and says when to wrap. The two meet in the middle: strain's cleanest
+behavioural counts come from the task track this skill maintains (one anchored MAIN,
+origin-tagged side tasks), and the wrap strain calls for is the handoff this skill writes. Each
+stands alone; together the loop closes.
 
 ## Capability-agnostic by design
 
@@ -145,7 +189,7 @@ without it.
 | `commands/resume.md` | The read / pick-up operation. |
 | `templates/handoff.template.md` | Single source of truth for handoff structure. |
 | `references/task-track.md` | The within-session discipline, in depth. |
-| `references/handoff.md` | The across-session protocol (the five anti-drift mechanisms), in depth. |
+| `references/handoff.md` | The across-session protocol (the seven anti-drift mechanisms + the multi-agent rules), in depth. |
 | `examples/example-handoff.md` | A filled-in handoff to copy the shape from. |
 | `tools/handoff.py` | Optional stdlib scaffold/validate helper. |
 | `assets/logic-flow.svg` | Diagram of how the two halves connect. |

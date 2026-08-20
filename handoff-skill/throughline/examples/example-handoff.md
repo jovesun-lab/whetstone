@@ -1,6 +1,6 @@
 # Handoff — add rate-limiting to the public API
 
-_Written 2025-03-14 16:20 · for: finishing and shipping the rate-limiter behind a flag_
+_Written 2025-03-14 16:20 · by session `rate-limit-mvp 14-03-25` · for: finishing and shipping the rate-limiter behind a flag_
 
 ## ⭐️ Goal
 
@@ -16,9 +16,18 @@ Ship per-API-key rate limiting on the public REST API, default 100 req/min, behi
 
 ## Done
 
+- **Goal verdict — "Ship per-API-key rate limiting …": PARTIAL.** Middleware built and
+  unit-tested (evidence: `make test ratelimit`, 14/14 green locally); *shipping* has not
+  happened — the flag is still off everywhere and the PR is unreviewed. Carried in Open / Next.
 - Token-bucket implementation + 14 unit tests (all green locally).
 - Config flag plumbed through `settings.py` and the Helm values file.
 - Draft PR opened (see References) — not reviewed.
+
+## Decisions
+
+- D1. Default limit is **100 req/min per API key** (confirmed 03-12).
+- D2. On Redis outage the limiter **fails open** — availability over enforcement (confirmed 03-13).
+- D3. Rollout is flag-gated: staging first, prod only after the 2× load test (confirmed 03-14).
 
 ## Open / Next
 
@@ -29,7 +38,7 @@ Ship per-API-key rate limiting on the public REST API, default 100 req/min, behi
 
 ## Re-derive on pickup
 
-- Re-run the test suite (`make test ratelimit`) — confirm still green; the cache pool refactor
+- Re-run the test suite (`make test ratelimit`) — **expect 14/14 green**; the cache pool refactor
   on `main` may have moved since this was written.
 - Re-read the draft PR and the linked design doc for any review comments added after 03-14.
 - Confirm `rate_limit_enabled` is still **off** in the prod values file before doing anything else.

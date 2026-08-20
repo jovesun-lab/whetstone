@@ -1,9 +1,9 @@
 {
   "name": "throughline",
-  "description": "Task-Track & Handoff for AI agents on long, multi-session work. Within a session it pins one ⭐️ MAIN goal in an emoji-tagged task list so the agent doesn't drift; across sessions or agents it writes a plain-markdown handoff the next agent re-derives before trusting. Not for short, one-pass tasks.",
-  "version": "0.1.1",
+  "description": "Task-Track & Handoff for AI agents on long, multi-session work. Within a session it pins one ⭐️ MAIN goal (frozen title, explicit verdict at close) in an emoji-tagged task list so the agent doesn't drift; across sessions or agents it writes a plain-markdown handoff the next agent re-derives before trusting. Not for short, one-pass tasks.",
+  "version": "0.2.0",
   "author": {
-    "name": "guxcom"
+    "name": "arcgram.io"
   },
   "homepage": "https://github.com/jovesun-lab/whetstone/tree/main/handoff-skill/throughline",
   "repository": "https://github.com/jovesun-lab/whetstone",
