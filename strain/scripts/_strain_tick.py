@@ -15,14 +15,45 @@ PostToolUse it goes to the debug log and the agent never sees it.
 import argparse, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _strain_common import (state_dir, session_path, load, save, blank, now_iso,
-                            touch_index, read_payload, log_model)
+from _strain_common import (TIERS, state_dir, session_path, load, save, blank, now_iso,
+                            touch_index, read_payload, log_model, floor_tier,
+                            signals_of, signal_floor, pattern_note)
 import _strain_context as ctxmod
 
 DEFAULT_N = 10          # tool calls between ticks
 
 
-def build_directive(n, st, ctx):
+def propose_tier(st, ctx):
+    """The tier v2 proposes, computed here rather than left to the agent's mood.
+
+    Fill is PRIMARY: the band the window sits in. Floors are the only other inputs --
+    escaped hard signals (absolute) and compactions (objective length). One composite:
+    fill already past the Warning band plus at least one escaped signal justifies
+    Danger even before the top band. Nothing else escalates; in particular the NUMBER
+    OF TICKS never does -- v1's "continuing past Warning => Danger" ratcheted on the
+    10-call treadmill and pinned Danger at a measured 33%% fill, three fixtures running.
+    Returns (tier, basis) where basis says where the number came from.
+    """
+    fill = ctxmod.fill_tier(ctx)
+    tier = fill or "Healthy"
+    basis = ("fill %s%%" % ctx.get("pct")) if fill else "no fill measurement"
+    sfloor = signal_floor(st)
+    if sfloor:
+        tier = floor_tier(tier, sfloor)
+        basis += " + escaped-signal floor %s" % sfloor
+    comp = int(st.get("compactions", 0))
+    if comp:
+        cfloor = "Warning" if comp >= 2 else "High"
+        tier = floor_tier(tier, cfloor)
+        basis += " + compaction floor %s" % cfloor
+    escaped = sum(1 for s in signals_of(st) if s.get("escaped"))
+    if escaped >= 1 and fill in ("Warning", "Danger"):
+        tier = "Danger"
+        basis += " + escaped signal past the Warning band"
+    return tier, basis
+
+
+def build_directive(n, st, ctx, substrate=""):
     bits = []
     ctx_line = ctxmod.describe(ctx)
     if ctx_line:
@@ -31,23 +62,35 @@ def build_directive(n, st, ctx):
         bits.append(" No context measurement on this host -- count behaviour, and say so"
                     " rather than quoting a number you did not measure.")
     if int(st.get("compactions", 0)) > 0:
-        bits.append(" Context has been COMPACTED %d time(s) this session -- that is a hard"
-                    " signal of length, not a fresh start." % int(st["compactions"]))
-    floor = ctxmod.context_floor(ctx)
-    if floor:
-        bits.append(" Context occupancy alone justifies at least %s." % floor)
+        bits.append(" Context has been COMPACTED %d time(s) this session -- an objective"
+                    " sign of length, floored into the proposal." % int(st["compactions"]))
+    note = pattern_note(st)
+    if note:
+        bits.append(" " + note)
+    proposed, basis = propose_tier(st, ctx)
+    carried = st.get("last", "Healthy")
+    decay = ""
+    try:
+        if TIERS.index(proposed) < TIERS.index(carried):
+            decay = (" The proposal is LOWER than the carried tier -- that is allowed:"
+                     " strain decays when the load does; record the lower tier unless"
+                     " something the counters cannot see says otherwise.")
+    except ValueError:
+        pass
     return (
-        "\U0001FA7A STRAIN TICK (%d tool calls since the last check). Run the session-strain"
-        " check now, before further work: read the task list (one MAIN goal + how many side"
-        " tasks have piled under it), add the hard signals (a factual error caught, a"
-        " regression introduced, a self-revert), and report the tier to the user in the"
-        " per-tier format -- Healthy: one line; Mid/High: the counts plus a suggestion to"
-        " wrap soon; Warning/Danger: the counts, the hard signals, why, and a recommendation"
-        " to wrap now.%s Then record it:"
+        "\U0001FA7A STRAIN TICK (%d tool calls since the last check)."
+        " PROPOSED TIER: %s (%s); carried: %s.%s%s"
+        " Confirm or adjust, then record it:"
         " `bash \"$CLAUDE_PLUGIN_ROOT/scripts/strain-level.sh\" <Healthy|Mid|High|Warning|Danger>`."
-        " An unrecorded tier is how this reading silently stays at its first value."
-        " [tier carried into this check: %s]"
-        % (n, "".join(bits), st.get("last", "Healthy"))
+        " Adjust UP only for a NEW hard signal the state file has not seen -- record it"
+        " first (`strain-signal.sh <kind> --caught|--escaped`): an error that ESCAPED to"
+        " the user floors the tier; one you caught and fixed pre-delivery is a working"
+        " immune system and moves nothing (say so, don't tier on it). Never escalate"
+        " because ticks accumulated or because the previous check was high -- fill and"
+        " fresh signals are the only ladders. An unrecorded tier is how this reading"
+        " silently stays at its first value. [%s]"
+        % (n, proposed, basis, carried, decay, "".join(bits),
+           ctxmod.calibration_line(ctx, substrate or st.get("substrate", "")))
     )
 
 
@@ -76,6 +119,8 @@ def main():
     prev_ctx = st.get("ctx") if isinstance(st.get("ctx"), dict) else {}
     ctx = ctxmod.measure(payload, sid, known_baseline=prev_ctx.get("baseline"))
     st["ctx"] = ctx
+    if not st.get("substrate"):
+        st["substrate"] = ctxmod.detect_substrate(payload, cwd)
 
     # The model comes from the transcript tail, not the hook payload -- SessionStart
     # fires before the transcript exists and its payload usually omits the model, so the
@@ -94,7 +139,7 @@ def main():
     if N > 0 and st["tick"] % N == 0:
         sys.stdout.write(json.dumps({"hookSpecificOutput": {
             "hookEventName": "PostToolUse",
-            "additionalContext": build_directive(N, st, ctx),
+            "additionalContext": build_directive(N, st, ctx, st.get("substrate", "")),
         }}))
     return 0
 

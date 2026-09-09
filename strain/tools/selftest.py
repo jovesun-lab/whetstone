@@ -130,7 +130,7 @@ def main():
                         {"STRAIN_STATE_DIR": sdir})
         check("level reads back", got == "High", got)
         nxt, _, _ = tick(sdir, "sess-D", n=1)
-        check("directive carries the recorded tier", "carried into this check: High" in nxt, nxt[:200])
+        check("directive carries the recorded tier", "carried: High" in nxt, nxt[:300])
         check("level reports which session it wrote", "sess-D" in err, err)
 
         # resolution by cwd, with no explicit session
@@ -202,14 +202,26 @@ def main():
         check("a missing transcript degrades quietly",
               state_of(sdir, "sess-I").get("ctx", {}).get("mode") == "inferred")
 
-        # thresholds
+        # ---- fill bands: the same fixture under two capacities (the v2 calibration) ----
+        # 160k tokens = 80% of a 200k window (Warning band) but 16% of a 1M one (Healthy).
+        # The tiers must differ with ZERO config edits beyond the detected window.
         big = os.path.join(tmp, "big.jsonl")
         make_transcript(big, [(2, 10000, 0), (2, 160000, 0)])
         out, _, _ = tick(sdir, "sess-J", n=1, transcript=big)
-        check("a full window raises the floor", "at least High" in out, out[:300])
+        check("80% fill proposes Warning", "PROPOSED TIER: Warning" in out, out[:300])
         out, _, _ = tick(sdir, "sess-K", n=1, transcript=big,
                          extra_env={"STRAIN_CONTEXT_LIMIT": "1000000"})
-        check("the window size is configurable", "at least" not in out, out[:300])
+        check("same fixture on a 1M window proposes Healthy",
+              "PROPOSED TIER: Healthy" in out, out[:300])
+        full = os.path.join(tmp, "full.jsonl")
+        make_transcript(full, [(2, 10000, 0), (2, 178000, 0)])
+        out, _, _ = tick(sdir, "sess-J2", n=1, transcript=full)
+        check("89% fill proposes Danger on fill alone",
+              "PROPOSED TIER: Danger" in out, out[:300])
+        out, _, _ = tick(sdir, "sess-J3", n=1, transcript=big,
+                         extra_env={"STRAIN_FILL_WARNING": "95",
+                                    "STRAIN_FILL_DANGER": "99"})
+        check("bands are env-tunable", "PROPOSED TIER: High" in out, out[:300])
 
         # ---- model: observed from the transcript tail, logged on change ----------------
         # The SessionStart payload usually omits the model, so the transcript is the
@@ -254,8 +266,8 @@ def main():
         ctx = state_of(ldir, "sess-L1").get("ctx", {})
         check("a 1M-window model gets a 1M denominator",
               ctx.get("limit") == 1000000 and ctx.get("pct") == 16.0, ctx)
-        check("a 1M window is not reported as nearly full", "at least" not in out,
-              out[:300])
+        check("a 1M window is not reported as nearly full",
+              "PROPOSED TIER: Healthy" in out, out[:300])
         make_transcript(lpath, [(2, 10000, 0), (2, 160000, 0)],
                         model="claude-sonnet-4-5[1m]")
         tick(ldir, "sess-L2", n=1, transcript=lpath)
@@ -290,6 +302,94 @@ def main():
         check("an empty payload never fails a session start", p.returncode == 0, p.returncode)
         check("an unknown session gets its own bucket, not someone else's",
               os.path.isfile(os.path.join(sdir, "sessions", "unknown-session.json")))
+
+        # ---- v2 NEGATIVE FIXTURE: the v1 bug, reproduced and now passing ---------------
+        # Three real sessions (2026-08-09/12/15) had v1 ratchet to Danger/Mid while the
+        # measured fill was 33/28/33%. Reproduce the shape: a carried Warning tier, a long
+        # tick history, 33% fill, zero escaped signals -> v2 must propose Healthy, offer
+        # decay, and never escalate on tick count.
+        ndir = os.path.join(tmp, "s8")
+        npath = os.path.join(tmp, "third.jsonl")
+        make_transcript(npath, [(2, 74000, 0), (2, 330000, 0)], model="claude-fable-5")
+        for _ in range(80):                       # the tick treadmill that ratcheted v1
+            tick(ndir, "sess-N", n=0, transcript=npath)
+        run("_strain_level.py", None, ["Warning", "--session", "sess-N"],
+            {"STRAIN_STATE_DIR": ndir})           # the ratcheted carry v1 left behind
+        out, _, _ = tick(ndir, "sess-N", n=1, transcript=npath)
+        check("33% fill with no escaped signals proposes Healthy, not Danger",
+              "PROPOSED TIER: Healthy" in out, out[:400])
+        check("the ratchet text is gone", "escalate to Danger" not in out
+              and "Escalate" not in out, out[:400])
+        check("a lower proposal names the decay", "LOWER than the carried tier" in out,
+              out[:600])
+        # caught-and-fixed errors (the third fixture had three, all one class) move nothing
+        for _ in range(3):
+            run("_strain_signal.py", None,
+                ["half-mechanism", "--caught", "--session", "sess-N"],
+                {"STRAIN_STATE_DIR": ndir})
+        out, _, _ = tick(ndir, "sess-N", n=1, transcript=npath)
+        check("caught signals do not move the proposal",
+              "PROPOSED TIER: Healthy" in out, out[:400])
+        check("a repeated signal class earns a pattern note",
+              "Pattern note" in out and "half-mechanism x3" in out, out[:600])
+
+        # ---- hard signals are absolute; escaped ones floor the tier --------------------
+        gdir = os.path.join(tmp, "s9")
+        tick(gdir, "sess-P", n=0, transcript=npath)          # 33% fill on a 1M window
+        out, _, rc = run("_strain_signal.py", None,
+                         ["regression", "--escaped", "--session", "sess-P"],
+                         {"STRAIN_STATE_DIR": gdir})
+        check("an escaped signal floors High at any fill",
+              rc == 0 and state_of(gdir, "sess-P").get("last") == "High", (rc, out))
+        run("_strain_signal.py", None, ["stale-read", "--escaped", "--session", "sess-P"],
+            {"STRAIN_STATE_DIR": gdir})
+        check("two escaped signals floor Warning",
+              state_of(gdir, "sess-P").get("last") == "Warning",
+              state_of(gdir, "sess-P"))
+        out, _, _ = tick(gdir, "sess-P", n=1, transcript=npath)
+        check("escaped floors survive a low-fill tick",
+              "PROPOSED TIER: Warning" in out, out[:400])
+        # composite: past the Warning band by fill AND an escaped signal -> Danger
+        wdir = os.path.join(tmp, "s9b")
+        wpath = os.path.join(tmp, "warnfill.jsonl")
+        make_transcript(wpath, [(2, 10000, 0), (2, 160000, 0)])   # 80% of 200k
+        run("_strain_signal.py", None, ["regression", "--escaped", "--session", "sess-Q"],
+            {"STRAIN_STATE_DIR": wdir})
+        out, _, _ = tick(wdir, "sess-Q", n=1, transcript=wpath)
+        check("Warning-band fill plus an escaped signal justifies Danger",
+              "PROPOSED TIER: Danger" in out, out[:400])
+        _, err, rc = run("_strain_signal.py", None, ["oops", "--session", "sess-Q"],
+                         {"STRAIN_STATE_DIR": wdir})
+        check("a signal must say caught or escaped", rc == 2 and "say whether" in err,
+              (rc, err))
+
+        # ---- estimated mode: transcript bytes when the host logs no usage --------------
+        edir = os.path.join(tmp, "s10")
+        bpath = os.path.join(tmp, "nousage.jsonl")
+        with open(bpath, "w") as f:
+            for _ in range(2000):
+                f.write(json.dumps({"type": "assistant",
+                                    "message": {"role": "assistant"}}) + "\n")
+        out, _, _ = tick(edir, "sess-R", n=1, transcript=bpath)
+        ctx = state_of(edir, "sess-R").get("ctx", {})
+        check("bytes become an estimated fill, not inferred silence",
+              ctx.get("mode") == "estimated" and ctx.get("pct") is not None, ctx)
+        check("estimated mode says so out loud", "ESTIMATED from transcript bytes" in out,
+              out[:400])
+
+        # ---- calibration is printed at boot, and a wrap reset clears signals -----------
+        cdir = os.path.join(tmp, "s11")
+        out, _, _ = start(cdir, "sess-S")
+        check("boot prints the calibration line", "strain calibrated:" in out
+              and "40/60/75/85" in out, out[:400])
+        run("_strain_signal.py", None, ["regression", "--escaped", "--session", "sess-S"],
+            {"STRAIN_STATE_DIR": cdir})
+        run("_strain_wrap.py", None, ["--label", "done", "--session", "sess-S"],
+            {"STRAIN_STATE_DIR": cdir})
+        start(cdir, "sess-S", source="resume")
+        st = state_of(cdir, "sess-S")
+        check("a wrap reset clears the signal ledger",
+              st.get("signals") == [] and st.get("last") == "Healthy", st)
 
         # ---- no absolute paths baked into the shipped config ---------------------------
         hooks = os.path.join(os.path.dirname(HERE), "hooks", "hooks.json")

@@ -72,30 +72,50 @@ count behaviour instead. **Never quote a context number you did not measure.**
 | A problem that came back | soft | it was already solved once this session |
 | Critical / blocking tasks open | soft | count them |
 | A second main goal appeared | soft | more than one thing claims to be the point |
-| **A factual error you stated and had to correct** | **hard** | one per correction |
-| **A regression you introduced** | **hard** | one per regression |
-| **A revert of your own work** | **hard** | one per revert |
+| **A factual error that ESCAPED to the user** | **hard, escaped** | one per error; record it |
+| **A regression that reached shipped work** | **hard, escaped** | one per regression; record it |
+| **An error you caught and fixed pre-delivery** | **hard, caught** | recorded, tiers nothing |
+| **A revert of your own work** | **hard** | escaped if the user saw the churn |
 | **A context compaction** | **hard** | the host compacted; the session has run long |
 
-Soft signals accumulate; hard signals jump the tier. A compaction is not a fresh start —
-it is the clearest evidence there is that the session has run long.
+Soft signals are colour, not ladder. Hard signals are ABSOLUTE — the same on any window
+size — but only the ones that **escaped** move the tier. A caught-and-fixed error is a
+working immune system, not exhaustion: say so, record it, and let a repeat of the same
+class earn a *pattern note* instead of a tier. Record every hard signal when it happens,
+so the counters know what you know:
+
+```
+bash "$CLAUDE_PLUGIN_ROOT/scripts/strain-signal.sh" <kind> --caught|--escaped
+```
+
+A compaction is not a fresh start — it is the clearest evidence there is that the
+session has run long.
 
 ## The tiers
 
-| Tier | Roughly | What it means |
-|---|---|---|
-| **Healthy** | few soft, no hard, context under ~60% | carry on |
-| **Mid** | soft piling up, or context ~60% | fine, but the end is in sight |
-| **High** | several soft, or one hard, or context ~75% | wrap after the current thread |
-| **Warning** | multiple hard, or context ~90% | wrap now; new work should start fresh |
-| **Danger** | continuing past a Warning | stop and hand off; the reading was already ignored once |
+Fill is the PRIMARY signal: what fraction of the detected context window is occupied.
+The default bands are **40 / 60 / 75 / 85%**, calibrated to the window the plugin
+detects at boot (a 200k and a 1M session get different absolute budgets from the same
+bands — no per-host table). The tick computes and PROPOSES the tier; your job is to
+confirm it or adjust it with what the counters cannot see.
 
-The context percentages are a starting guess and are meant to be retuned to your own
-setup — they are configurable, and the readout prints the ones it used.
+| Tier | Fill band | Also reached by | What it means |
+|---|---|---|---|
+| **Healthy** | under 40% | — | carry on |
+| **Mid** | 40–60% | — | fine, but the end is in sight |
+| **High** | 60–75% | 1 escaped signal, or 1 compaction | wrap after the current thread |
+| **Warning** | 75–85% | 2+ escaped signals, or 2+ compactions | wrap now; new work should start fresh |
+| **Danger** | 85%+ | Warning-band fill **plus** an escaped signal | stop and hand off |
 
-**Escalation is one-way within a session.** A compaction that pushed the tier up does not
-get undone by a later optimistic reading. Recording an honest improvement after real
-relief (a wrap, a cleared backlog) is allowed; forgetting a hard signal is not.
+The bands are printed in every readout and are configurable; retune them to your setup.
+
+**Escalate only on evidence, never on momentum.** Ticks accumulating is not evidence; a
+previous high reading is not evidence. Fill crossing a band and fresh escaped signals
+are the only ladders — and strain DECAYS: when the proposal comes in lower than the
+carried tier and nothing new happened, record the lower tier. Floors from compactions
+and escaped signals hold; everything else is allowed to relax. (The old
+"continuing past a Warning ⇒ Danger" rule is deleted — it pinned Danger at a measured
+33% fill, three sessions running.)
 
 ## How to report it
 
@@ -103,13 +123,13 @@ Match the shape to the tier. The point is that the user can act without asking f
 
 - **Healthy** — one line, or nothing at all if the user did not ask. Do not pad.
 - **Mid / High** — the counts, and a suggestion to wrap soon:
-  > 🟡 High — context 172k/200k (86%), of which 70k was the boot. 1 main goal, 3 side
-  > tasks, 1 factual error corrected. Suggest finishing the current thread and wrapping.
-- **Warning / Danger** — the counts, **which hard signals fired**, why it matters, and a
-  recommendation to wrap now:
-  > 🔴 Warning — context 185k/200k (93%), 2 compactions, 2 corrections. The last two
-  > answers needed fixing after the fact. Recommend wrapping and starting fresh; I will
-  > write the handoff first.
+  > 🟡 High — context 136k/200k (68%), of which 70k was the boot. 1 main goal, 3 side
+  > tasks. Suggest finishing the current thread and wrapping.
+- **Warning / Danger** — the counts, **which hard signals fired and whether they
+  escaped**, why it matters, and a recommendation to wrap now:
+  > 🔴 Warning — context 158k/200k (79%), 2 compactions, 1 escaped regression. The fix
+  > shipped broken and the window is nearly full. Recommend wrapping and starting
+  > fresh; I will write the handoff first.
 
 Then **record it**, so the next tick carries it forward instead of starting over:
 

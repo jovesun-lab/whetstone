@@ -27,6 +27,7 @@ import argparse, json, os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (state_dir, session_path, wrap_path, load, save, blank,
                             floor_tier, now_iso, touch_index, read_payload, log_model)
+import _strain_context as ctxmod
 
 PRUNE_DAYS = 30
 
@@ -74,6 +75,7 @@ def main():
         st["tick"] = 0
         st["compactions"] = 0
         st["last"] = "Healthy"
+        st["signals"] = []
         st["consumed_wrap"] = marker_ts
 
     note = ""
@@ -84,6 +86,8 @@ def main():
         note = ("Context was COMPACTED (%d time(s) since the last wrap) -- an objective sign "
                 "the work has run long. Tier floored to %s." % (st["compactions"], st["last"]))
 
+    if not st.get("substrate"):
+        st["substrate"] = ctxmod.detect_substrate(payload, cwd)
     st["updated"] = now_iso()
     save(path, st)
     touch_index(sdir, sid, cwd)
@@ -95,6 +99,13 @@ def main():
     prune(sdir)
 
     bits = []
+    # Calibration is OBSERVABLE at boot -- one line naming substrate, window, and bands,
+    # derived from what was detected rather than a baked-in table, so a mis-calibration
+    # is visible to the human instead of silently wrong. The window may still read as
+    # the default here: the transcript often does not exist at SessionStart, so the
+    # model (and with it the true denominator) is first observed at tick time -- the
+    # tick prints the same line with the measured values.
+    bits.append(ctxmod.calibration_line(st.get("ctx") or {}, st.get("substrate", "")) + ".")
     if reset:
         who = marker.get("label") or marker.get("session") or "a completed wrap"
         bits.append("Strain counters reset on %s." % who)

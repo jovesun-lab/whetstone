@@ -29,9 +29,8 @@ Nothing to configure. Nothing leaves your machine.
 ## What a readout looks like
 
 ```
-🟡 High — context 172k/200k (86%), of which 70k was the boot itself.
-1 main goal, 3 side tasks, 1 factual error corrected.
-Suggest finishing the current thread and wrapping.
+🟡 High — context 136k/200k (68%), of which 70k was the boot itself.
+1 main goal, 3 side tasks. Suggest finishing the current thread and wrapping.
 ```
 
 That number on the first line is measured, not estimated — see below.
@@ -41,7 +40,8 @@ That number on the first line is measured, not estimated — see below.
 | Mode | When | What you get |
 |---|---|---|
 | **measured** | the host publishes a per-session transcript with token usage (Claude Code does) | real context numbers: how full the window is, and what the boot alone cost before any work happened |
-| **inferred** | it does not | behaviour counting: tool calls, compactions, and what the task list shows |
+| **estimated** | a transcript exists but carries no token usage | fill estimated from transcript bytes (~4 bytes/token), labelled ESTIMATED in every readout |
+| **inferred** | no transcript at all | behaviour counting: tool calls, compactions, and what the task list shows |
 
 `inferred` is not a failure — it is the original design and it works. What *would* be a
 failure is printing a confident number nobody measured, so the mode travels with every
@@ -82,8 +82,18 @@ is this* and *can I read this session's real context size* are the same question
 
 - **soft** — distinct subjects touched, a side task that balloons past the main one, a
   problem that came back, open critical tasks, a second goal appearing
-- **hard** — a factual error you stated and corrected, a regression introduced, a revert
-  of your own work, **a context compaction**
+- **hard** — a factual error, a regression, a revert of your own work, **a context
+  compaction** — recorded with `strain-signal.sh <kind> --caught|--escaped`
+
+Hard signals are absolute (capacity never dilutes accountability), but only the ones
+that **escaped** — reached the user or shipped work — move the tier. An error caught
+and fixed before delivery is a working immune system, not exhaustion: it is recorded,
+and a repeat of the same class earns a pattern note, without driving the tier. The
+fill bands are the primary ladder (default **40/60/75/85%** of the detected window →
+Mid/High/Warning/Danger), the tick computes and proposes the tier itself, and the
+proposal is allowed to DECAY when the load does. Nothing escalates on tick count —
+the old "continuing past a Warning ⇒ Danger" rule pinned Danger at a measured 33%
+fill, three sessions running, and is deleted.
 
 A compaction is not a fresh start. It is the clearest evidence available that the session
 has run long, so it raises the floor and does not come back down.
@@ -98,6 +108,8 @@ All of these live in the plugin folder, so the agent runs them as
 | `strain-level.sh <tier>` | record the tier for this session |
 | `strain-level.sh --get` | print the current tier |
 | `strain-level.sh --show` | the whole state, including the context reading and which file it came from |
+| `strain-signal.sh <kind> --caught\|--escaped` | record a hard signal; escaped ones floor the tier, caught ones feed the pattern note |
+| `strain-signal.sh --list` | print this session's signal ledger |
 | `strain-wrap.sh --label "…"` | mark the work wrapped; resets the counters once, at the next session start |
 | `strain-wrap.sh --status` | show the current wrap marker |
 
@@ -113,7 +125,8 @@ exactly like a check that is working fine and always says Healthy.
 | `STRAIN_N` | tool calls between ticks | `10` |
 | `STRAIN_STATE_DIR` | where state lives | `~/.local/state/strain` (or `$XDG_STATE_HOME/strain`) |
 | `STRAIN_CONTEXT_LIMIT` | context window size, tokens; overrides the model-based guess | inferred from the observed model (`fable` / `[1m]` → 1M, else 200k) |
-| `STRAIN_CTX_MID` / `_HIGH` / `_WARNING` | context % that floors each tier | `60` / `75` / `90` |
+| `STRAIN_FILL_MID` / `_HIGH` / `_WARNING` / `_DANGER` | fill % that enters each band | `40` / `60` / `75` / `85` |
+| `STRAIN_SUBSTRATE` | name the shell explicitly for the calibration line | detected from the transcript path |
 | `STRAIN_NO_MODEL_LOG` | stop recording which model ran which session | unset |
 | `STRAIN_SESSION` | name the session explicitly for CLI commands | resolved from the working directory |
 
@@ -149,12 +162,15 @@ requires the other.
 python3 tools/selftest.py -v
 ```
 
-47 checks, host-independent: counting, per-session isolation, the tick firing on schedule
+63 checks, host-independent: counting, per-session isolation, the tick firing on schedule
 and only then, the writer and reader agreeing on one location, wrap-marker reset semantics
-(including that one wrap buys exactly one reset), compaction escalation, both context
+(including that one wrap buys exactly one reset), compaction escalation, all three context
 modes, model observation (logged on change, a mid-session switch gets its own row, no
-empty rows), the denominator following the observed model, threshold configuration, and
-malformed payloads never failing a tool call.
+empty rows), the denominator following the observed model, fill-band math on two
+capacities, escaped-vs-caught signal weighting, the boot calibration line, and malformed
+payloads never failing a tool call — plus the **negative fixture**: the v1 bug (Danger
+pinned at a measured 33% fill by tick-count ratcheting) reproduced against the v1
+scripts, where 19 of these checks fail, and passing here.
 
 ## Developing on it
 

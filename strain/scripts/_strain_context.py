@@ -174,6 +174,22 @@ def measure(payload, sid, known_baseline=None):
             return out
         current, base, model = read_usage(path, want_baseline=(known_baseline is None))
         if current is None:
+            # No usage keys anywhere in the transcript -- a host that logs turns but not
+            # tokens. The transcript's SIZE is still a real signal, so estimate: ~4 bytes
+            # per token is coarse, and the mode says so ("estimated", never "measured").
+            # Estimating beats the v1 behaviour, which fell back to counting tool calls
+            # and read a one-third-full window as Danger.
+            try:
+                size = os.path.getsize(path)
+            except Exception:
+                return out
+            if size <= 0:
+                return out
+            out["mode"] = "estimated"
+            out["tokens"] = size // 4
+            out["transcript"] = path
+            out["limit"] = limit()
+            out["pct"] = round(100.0 * out["tokens"] / out["limit"], 1)
             return out
         out["mode"] = "measured"
         out["tokens"] = current
@@ -187,34 +203,87 @@ def measure(payload, sid, known_baseline=None):
     return out
 
 
-def context_floor(ctx):
-    """The tier this much context occupancy justifies on its own.
+def bands():
+    """The fill bands, lowest first: crossing each one enters Mid/High/Warning/Danger.
 
-    Thresholds are a starting guess, not a law -- they are the one number every user
-    should expect to retune, so they are env-overridable and printed in the readout.
-    A window past three quarters full is a real constraint on what the session can still
-    do, whatever the task list says.
+    Defaults are the 2026-09-04 ruling (40/60/75/85). Env-overridable per band because
+    thresholds are the one number every user should expect to retune -- and whatever they
+    are, they are PRINTED at boot and on every tick, so a mis-calibration is visible
+    instead of silently wrong.
     """
-    if not ctx or ctx.get("mode") != "measured" or ctx.get("pct") is None:
-        return None
     def thr(name, default):
         try:
             return float(os.environ.get(name, default))
         except Exception:
             return default
+    return (thr("STRAIN_FILL_MID", 40.0), thr("STRAIN_FILL_HIGH", 60.0),
+            thr("STRAIN_FILL_WARNING", 75.0), thr("STRAIN_FILL_DANGER", 85.0))
+
+
+def fill_tier(ctx):
+    """The tier the fill percentage justifies on its own -- the PRIMARY signal.
+
+    <mid Healthy · mid-high Mid · high-warning High · warning-danger Warning ·
+    >=danger Danger (a window that full is a real constraint by itself; the acceptance
+    rule is "no Danger without fill past the top band or fresh hard signals").
+    Returns None when nothing was measured or estimated -- never a guessed tier.
+    """
+    if not ctx or ctx.get("mode") not in ("measured", "estimated") or ctx.get("pct") is None:
+        return None
+    mid, high, warning, danger = bands()
     pct = ctx["pct"]
-    if pct >= thr("STRAIN_CTX_WARNING", 90.0):
+    if pct >= danger:
+        return "Danger"
+    if pct >= warning:
         return "Warning"
-    if pct >= thr("STRAIN_CTX_HIGH", 75.0):
+    if pct >= high:
         return "High"
-    if pct >= thr("STRAIN_CTX_MID", 60.0):
+    if pct >= mid:
         return "Mid"
-    return None
+    return "Healthy"
+
+
+def context_floor(ctx):
+    """Back-compat name: the floor the fill justifies (None when Healthy/unmeasured)."""
+    t = fill_tier(ctx)
+    return None if t in (None, "Healthy") else t
+
+
+def detect_substrate(payload, cwd=""):
+    """Which shell this session runs under -- decides nothing by itself, but travels
+    with the calibration line so a wrong window is attributable. Env-overridable."""
+    env = os.environ.get("STRAIN_SUBSTRATE")
+    if env:
+        return env
+    tp = str((payload or {}).get("transcript_path") or "")
+    probe = tp + " " + (cwd or "")
+    if "local-agent-mode-sessions" in probe or probe.startswith("/sessions/") \
+            or " /sessions/" in probe:
+        return "cowork"
+    if "/.claude/projects/" in tp:
+        return "claude-code"
+    return "unknown"
+
+
+def calibration_line(ctx, substrate=""):
+    """One line that proves calibration happened: substrate, window, bands, mode.
+
+    The S255 law -- running is not observing -- applies to the calibrator itself: this
+    line is derived from what was actually measured, not from a baked-in table.
+    """
+    mid, high, warning, danger = bands()
+    lim = (ctx or {}).get("limit") or limit()
+    mode = (ctx or {}).get("mode") or "pending"
+    def k(n):
+        return ("%gM" % (n / 1000000.0)) if n >= 1000000 else ("%.0fk" % (n / 1000.0))
+    return ("strain calibrated: %s · window %s · fill bands %g/%g/%g/%g%% -> "
+            "Mid/High/Warning/Danger · signal mode %s"
+            % (substrate or "unknown", k(lim), mid, high, warning, danger, mode))
 
 
 def describe(ctx):
     """One human line for the readout, or "" when there is nothing measured to say."""
-    if not ctx or ctx.get("mode") != "measured":
+    if not ctx or ctx.get("mode") not in ("measured", "estimated"):
         return ""
     def k(n):
         if n is None:
@@ -223,6 +292,8 @@ def describe(ctx):
             return ("%g" % (n / 1000000.0)) + "M"
         return "%.0fk" % (n / 1000.0)
     bit = "context %s/%s (%.0f%%)" % (k(ctx.get("tokens")), k(ctx.get("limit")), ctx.get("pct") or 0)
-    if ctx.get("baseline"):
+    if ctx.get("mode") == "estimated":
+        bit += ", ESTIMATED from transcript bytes (no token usage on this host)"
+    elif ctx.get("baseline"):
         bit += ", of which %s was the boot itself" % k(ctx["baseline"])
     return bit

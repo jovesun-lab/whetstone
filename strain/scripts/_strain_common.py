@@ -164,7 +164,44 @@ def resolve_sid(sdir, explicit=None, cwd=None):
 def blank(sid="", cwd=""):
     return {"sid": sid, "tick": 0, "last": "Healthy", "compactions": 0,
             "source": "", "model": "", "cwd": cwd, "updated": now_iso(),
-            "consumed_wrap": "", "ctx": {}}
+            "consumed_wrap": "", "ctx": {}, "substrate": "", "signals": []}
+
+
+def signals_of(st):
+    s = st.get("signals")
+    return s if isinstance(s, list) else []
+
+
+def signal_floor(st):
+    """The tier hard signals justify on their own -- ABSOLUTE, never diluted by capacity.
+
+    Only signals that ESCAPED (reached the user / shipped work before being caught)
+    drive the tier. A caught-and-fixed error is a working immune system, not exhaustion
+    -- it is recorded, and a repeat of the same class earns a pattern note, but the
+    tier's job is to answer "can this session keep going?", which a caught error does
+    not change. (Third fixture, 2026-08-15: three same-class caught-and-fixed errors at
+    33% fill -- v1 ratcheted to Danger; the session was fine.)
+    """
+    escaped = sum(1 for s in signals_of(st) if s.get("escaped"))
+    if escaped >= 2:
+        return "Warning"
+    if escaped == 1:
+        return "High"
+    return None
+
+
+def pattern_note(st):
+    """A repeat of the same signal class is worth telling the human -- as a pattern,
+    not as a tier. Returns "" when there is nothing to say."""
+    seen = {}
+    for s in signals_of(st):
+        k = str(s.get("kind") or "unspecified")
+        seen[k] = seen.get(k, 0) + 1
+    rep = ["%s x%d" % (k, n) for k, n in sorted(seen.items()) if n >= 2]
+    if not rep:
+        return ""
+    return "Pattern note: repeated signal class(es): %s -- name the pattern to the user." \
+        % ", ".join(rep)
 
 
 def floor_tier(current, minimum):
