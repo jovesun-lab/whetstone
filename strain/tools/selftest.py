@@ -274,6 +274,16 @@ def main():
         check("an explicit [1m] variant gets a 1M denominator",
               state_of(ldir, "sess-L2").get("ctx", {}).get("limit") == 1000000,
               state_of(ldir, "sess-L2").get("ctx"))
+        make_transcript(lpath, [(2, 10000, 0), (2, 160000, 0)], model="claude-opus-5")
+        tick(ldir, "sess-L4", n=1, transcript=lpath)
+        check("opus-5 gets a 1M denominator (0.2.1 table refresh)",
+              state_of(ldir, "sess-L4").get("ctx", {}).get("limit") == 1000000,
+              state_of(ldir, "sess-L4").get("ctx"))
+        make_transcript(lpath, [(2, 10000, 0), (2, 160000, 0)], model="claude-sonnet-5")
+        tick(ldir, "sess-L5", n=1, transcript=lpath)
+        check("sonnet-5 gets the 500K effective ceiling (Cowork compaction bound)",
+              state_of(ldir, "sess-L5").get("ctx", {}).get("limit") == 500000,
+              state_of(ldir, "sess-L5").get("ctx"))
         out, _, _ = tick(ldir, "sess-L3", n=1, transcript=lpath,
                          extra_env={"STRAIN_CONTEXT_LIMIT": "200000"})
         check("the env override still beats the model hint",

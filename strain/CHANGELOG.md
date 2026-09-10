@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1 — 2026-09-09
+
+Denominator table refresh (sourced from the official help-center context-window
+page, checked 2026-09-09): `opus-5` / `opus-4-8` / `opus-4-7` / `mythos` → 1M;
+`sonnet-5` → 500K (its Cowork auto-compaction ceiling — the conservative choice on
+other surfaces). Fixes a field incident where a 1M-window session divided by the
+200K default read 102% and was used as Danger evidence. The numerator was audited
+in the same incident and left untouched: the three usage buckets partition the
+prompt on API-semantics hosts (audit note now in `_usage_of`). Selftest 63 → 65.
+
 ## 0.2.0 — 2026-09-04
 
 Strain v2: fill-primary, auto-calibrating, de-ratcheted.

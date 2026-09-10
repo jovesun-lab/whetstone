@@ -1,6 +1,6 @@
 {
   "name": "strain",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A session-strain meter for long agent sessions. Counts how loaded a single conversation has become and makes the agent report it on its own, on a schedule it cannot quietly skip, so you find out that a session should be wrapped before its answers start degrading. Reads the real context size on hosts that expose one, and says so plainly when it cannot.",
   "author": {
     "name": "arcgram.io"

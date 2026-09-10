@@ -51,6 +51,13 @@ HEAD_LINES = 400                # how far into the head to look for the first us
 MODEL_LIMITS = (
     ("[1m]", 1000000),          # explicit long-context variants, e.g. sonnet-4-5[1m]
     ("fable", 1000000),
+    ("mythos", 1000000),
+    ("opus-5", 1000000),        # official help-center table (2026-09-09): 1M on BOTH
+    ("opus-4-8", 1000000),      #   agentic surfaces (Claude Code and Cowork); the chat
+    ("opus-4-7", 1000000),      #   interface differs, but strain does not run there.
+    ("sonnet-5", 500000),       # 1M window, but Cowork auto-compacts at 500K -- the smaller
+                                #   number is the EFFECTIVE ceiling there; on Claude Code it
+                                #   over-reports 2x, which is the safe direction.
 )
 
 
@@ -84,6 +91,12 @@ def _usage_of(line):
     u = msg.get("usage")
     if not isinstance(u, dict):
         return None, ""
+    # AUDITED 2026-09-09 (a 102% field reading was blamed on these buckets "overlapping"):
+    # on API-semantics hosts the three buckets PARTITION the prompt -- uncached + served-
+    # from-cache + written-to-cache are disjoint, their sum IS the context the model saw.
+    # The 102% is fully explained by a 200k denominator under a true 1M window (fixed in
+    # MODEL_LIMITS above). If a host is ever SHOWN double-counting, fix it here with a
+    # transcript receipt -- never by discounting the sum on a hunch.
     total = 0
     for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
         try:
