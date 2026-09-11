@@ -1,2 +1,4 @@
 # macOS
 .DS_Store
+# Built plugin packages -- reproducible from source, uploaded by hand, never tracked
+*.plugin
