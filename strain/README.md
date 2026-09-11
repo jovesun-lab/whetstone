@@ -160,9 +160,12 @@ facts about your setup:**
    point where replies get shorter, reasoning goes quiet, narration stops. Watch for
    where it happens on *yours*, set it, and re-verify when the platform or model
    changes — it is a physical constant of your environment, not a preference.
-3. **The wrap budget.** `6` is an unmeasured estimate (5–8% bracket). Measure your own:
-   note the fill % right before and right after one real session wrap, and pin the
-   difference. Until you do, treat the derived Danger cap as approximate.
+3. **The wrap budget.** `6` shipped as an estimate. The first field measurement on the
+   design's home environment came in at **≈9.5%** (2026-09-11: wrap began at 49% fill,
+   ended at 58.5%, including one failed-then-fixed check pass) — so treat `6` as
+   optimistic. Measure your own: note the fill % right before and right after one real
+   session wrap, and pin the difference. Until you do, treat the derived Danger cap as
+   approximate — and err early, not late.
 
 The Line-B ladder (3/4/≥5) is deliberately **not** an env knob — it is a team policy,
 and a policy adjustable by environment fiddling can drift silently. Change it by
