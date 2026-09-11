@@ -208,7 +208,9 @@ def main():
         big = os.path.join(tmp, "big.jsonl")
         make_transcript(big, [(2, 10000, 0), (2, 160000, 0)])
         out, _, _ = tick(sdir, "sess-J", n=1, transcript=big)
-        check("80% fill proposes Warning", "PROPOSED TIER: Warning" in out, out[:300])
+        check("v3: 80% fill proposes Danger (>= derived cap 74) with a MANDATORY wrap",
+              "PROPOSED TIER: Danger" in out and "MANDATORY DIRECTIVE" in out,
+              out[:400])
         out, _, _ = tick(sdir, "sess-K", n=1, transcript=big,
                          extra_env={"STRAIN_CONTEXT_LIMIT": "1000000"})
         check("same fixture on a 1M window proposes Healthy",
@@ -219,9 +221,11 @@ def main():
         check("89% fill proposes Danger on fill alone",
               "PROPOSED TIER: Danger" in out, out[:300])
         out, _, _ = tick(sdir, "sess-J3", n=1, transcript=big,
-                         extra_env={"STRAIN_FILL_WARNING": "95",
-                                    "STRAIN_FILL_DANGER": "99"})
-        check("bands are env-tunable", "PROPOSED TIER: High" in out, out[:300])
+                         extra_env={"STRAIN_CAP_WARN": "90", "STRAIN_CAP_HIGH": "75",
+                                    "STRAIN_THROTTLE_ONSET": "99",
+                                    "STRAIN_WRAP_BUDGET": "1"})
+        check("caps are env-tunable (80% under a raised ladder proposes High)",
+              "PROPOSED TIER: High" in out, out[:300])
 
         # ---- model: observed from the transcript tail, logged on change ----------------
         # The SessionStart payload usually omits the model, so the transcript is the
@@ -300,6 +304,60 @@ def main():
               state_of(sdir, "sess-G")["ctx"].get("baseline") == 12345,
               state_of(sdir, "sess-G")["ctx"])
 
+        # ---- v3 two-line model: the acceptance rows, unit level -----------------------
+        # Direct calls on propose_tier -- some rows need fills no transcript fixture can
+        # produce (an impossible percentage IS the fixture). Each row locks one behaviour
+        # of the model; together they are the acceptance sheet for the v3 port.
+        sys.path.insert(0, SCRIPTS)
+        import _strain_tick as tickmod
+
+        def pt(fill, mode="measured", escaped=0, compactions=0, env=None):
+            old = {}
+            for kk, vv in (env or {}).items():
+                old[kk] = os.environ.get(kk)
+                os.environ[kk] = vv
+            try:
+                stx = {"compactions": compactions,
+                       "signals": [{"kind": "k%d" % i, "escaped": True}
+                                   for i in range(escaped)]}
+                ctxx = {"mode": mode, "pct": fill, "limit": 200000}
+                return tickmod.propose_tier(stx, ctxx)
+            finally:
+                for kk, vv in old.items():
+                    if vv is None:
+                        os.environ.pop(kk, None)
+                    else:
+                        os.environ[kk] = vv
+
+        t_, b_, d_ = pt(75.0, escaped=1)
+        check("v3-A: fill 75 + 1 escaped = Danger via Line A, MANDATORY directive",
+              t_ == "Danger" and any("MANDATORY" in x for x in d_)
+              and "Line B Healthy" in b_, (t_, b_, d_))
+        t_, b_, d_ = pt(210.0, escaped=4)
+        check("v3-B: fill 210 = Line A abstains loudly, High via Line B only",
+              t_ == "High" and "impossible" in b_, (t_, b_))
+        t_, b_, d_ = pt(46.0, escaped=2)
+        check("v3-C: fill 46 + 2 escaped = Healthy (both lines quiet)",
+              t_ == "Healthy", (t_, b_))
+        t_, b_, d_ = pt(None, mode="inferred")
+        check("v3-D: unmeasured mode = Line A abstains, never 'Healthy (fill 0%)'",
+              t_ == "Healthy" and "abstains" in b_ and "fill 0" not in b_, (t_, b_))
+        t_, b_, d_ = pt(80.0, env={"STRAIN_WRAP_BUDGET": "12"})
+        check("v3-E: a raised WRAP_BUDGET that inverts the ladder shouts CONFIG INVALID",
+              "CONFIG INVALID" in b_, b_)
+        t_, b_, d_ = pt(82.0, escaped=0)
+        check("v3-F: throttle zone with ZERO escaped -> no capacity-induced claim",
+              "capacity-induced" not in b_, b_)
+        t_, b_, d_ = pt(82.0, escaped=1)
+        check("v3-F2: throttle zone WITH an escaped -> observation annotates only",
+              "capacity-induced" in b_ and t_ == "Danger", (t_, b_))
+        t_, b_, d_ = pt(90.0, env={"STRAIN_WRAP_BUDGET": "15"})
+        check("v3-H: inverted ladder + fill 90 -> defaults in force -> Danger",
+              t_ == "Danger" and "CONFIG INVALID" in b_, (t_, b_))
+        t_, b_, d_ = pt(-5.0)
+        check("v3-I: pct -5 -> Line A abstains loudly, never 'Healthy (fill -5%)'",
+              t_ == "Healthy" and "impossible" in b_, (t_, b_))
+
         # ---- robustness ---------------------------------------------------------------
         sdir = os.path.join(tmp, "s7")
         p = subprocess.run([sys.executable, os.path.join(SCRIPTS, "_strain_tick.py")],
@@ -349,25 +407,39 @@ def main():
         out, _, rc = run("_strain_signal.py", None,
                          ["regression", "--escaped", "--session", "sess-P"],
                          {"STRAIN_STATE_DIR": gdir})
-        check("an escaped signal floors High at any fill",
-              rc == 0 and state_of(gdir, "sess-P").get("last") == "High", (rc, out))
+        check("v3 ladder: one escaped signal moves NOTHING",
+              rc == 0 and state_of(gdir, "sess-P").get("last") == "Healthy", (rc, out))
         run("_strain_signal.py", None, ["stale-read", "--escaped", "--session", "sess-P"],
             {"STRAIN_STATE_DIR": gdir})
-        check("two escaped signals floor Warning",
+        check("v3 ladder: two escaped signals still move nothing",
+              state_of(gdir, "sess-P").get("last") == "Healthy",
+              state_of(gdir, "sess-P"))
+        run("_strain_signal.py", None, ["third-class", "--escaped", "--session", "sess-P"],
+            {"STRAIN_STATE_DIR": gdir})
+        check("v3 ladder: the third escaped floors Mid",
+              state_of(gdir, "sess-P").get("last") == "Mid", state_of(gdir, "sess-P"))
+        run("_strain_signal.py", None, ["fourth-class", "--escaped", "--session", "sess-P"],
+            {"STRAIN_STATE_DIR": gdir})
+        run("_strain_signal.py", None, ["fifth-class", "--escaped", "--session", "sess-P"],
+            {"STRAIN_STATE_DIR": gdir})
+        check("v3 ladder: the fifth escaped floors Warning",
               state_of(gdir, "sess-P").get("last") == "Warning",
               state_of(gdir, "sess-P"))
         out, _, _ = tick(gdir, "sess-P", n=1, transcript=npath)
         check("escaped floors survive a low-fill tick",
               "PROPOSED TIER: Warning" in out, out[:400])
-        # composite: past the Warning band by fill AND an escaped signal -> Danger
+        # v3: max() synthesis, NO cross-weighting -- Warning-cap fill (72%, below the
+        # derived Danger cap 74) plus 3 escaped stays Warning; the throttle-zone note
+        # annotates and never tiers.
         wdir = os.path.join(tmp, "s9b")
         wpath = os.path.join(tmp, "warnfill.jsonl")
-        make_transcript(wpath, [(2, 10000, 0), (2, 160000, 0)])   # 80% of 200k
-        run("_strain_signal.py", None, ["regression", "--escaped", "--session", "sess-Q"],
-            {"STRAIN_STATE_DIR": wdir})
+        make_transcript(wpath, [(2, 10000, 0), (2, 144000, 0)])   # 72% of 200k
+        for kk in ("k1", "k2", "k3"):
+            run("_strain_signal.py", None, [kk, "--escaped", "--session", "sess-Q"],
+                {"STRAIN_STATE_DIR": wdir})
         out, _, _ = tick(wdir, "sess-Q", n=1, transcript=wpath)
-        check("Warning-band fill plus an escaped signal justifies Danger",
-              "PROPOSED TIER: Danger" in out, out[:400])
+        check("v3 no cross-weighting: Warning fill + 3 escaped stays Warning (max)",
+              "PROPOSED TIER: Warning" in out and "Line B Mid" in out, out[:400])
         _, err, rc = run("_strain_signal.py", None, ["oops", "--session", "sess-Q"],
                          {"STRAIN_STATE_DIR": wdir})
         check("a signal must say caught or escaped", rc == 2 and "say whether" in err,

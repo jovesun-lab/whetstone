@@ -183,10 +183,20 @@ def signal_floor(st):
     33% fill -- v1 ratcheted to Danger; the session was fine.)
     """
     escaped = sum(1 for s in signals_of(st) if s.get("escaped"))
-    if escaped >= 2:
+    # v3 ladder -- TEAM POLICY, deliberately code constants and NOT env knobs (a
+    # policy adjustable by environment fiddling is an instrument whose meaning can
+    # drift silently; change these by team decision + edit, so the change is visible
+    # in review). Rationale for the default: escaped errors often arrive in a burst
+    # that shares ONE root cause (a capability gap -- the agent lacks a discipline
+    # for some class of task), and a capability gap is not exhaustion. 0-2 escaped
+    # move nothing on their own; a wider spread starts to look like degradation:
+    # 3 -> Mid, 4 -> High, >=5 -> Warning. Tune to your team's error tolerance.
+    if escaped >= 5:
         return "Warning"
-    if escaped == 1:
+    if escaped == 4:
         return "High"
+    if escaped == 3:
+        return "Mid"
     return None
 
 

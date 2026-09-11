@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.0 — 2026-09-11
+
+**The two-line tier model.** Capacity and conduct are now scored on separate lines and
+max-joined — never multiplied:
+
+- **Line A (capacity)**: fill vs a cap ladder (`50/60/70` → Mid/High/Warning), with
+  **Danger derived** = `STRAIN_THROTTLE_ONSET − STRAIN_WRAP_BUDGET` (default 80 − 6 =
+  74) so a mandated wrap completes *before* the model's degraded zone. Line A abstains
+  loudly on untrustworthy numbers (no measurement / impossible %) instead of reading
+  them as "Healthy (fill 0%)"; an inverted ladder (misconfigured env) is shouted and
+  the built-in defaults stay in force.
+- **Line B (conduct)**: the escaped-signal ladder is re-banded to `0–2 none · 3 Mid ·
+  4 High · ≥5 Warning` — a small burst of escapes usually shares one root cause (a
+  capability gap), which is not exhaustion. The ladder is a code constant on purpose:
+  team policy changes by edit + review, not by env fiddling.
+- The v2 composite ("escaped signal past the Warning band ⇒ Danger") is **deleted** —
+  no cross-weighting; throttle-zone errors are annotated, never auto-escalated.
+- New env knobs: `STRAIN_CAP_MID/_HIGH/_WARN`, `STRAIN_THROTTLE_ONSET`,
+  `STRAIN_WRAP_BUDGET` (replacing `STRAIN_FILL_*`). The readout prints the caps in
+  force. MANDATORY-wrap / prepare-to-wrap / recovery directives ride with the tick;
+  the recovery directive prints once per compaction event.
+- README gains a "three numbers are yours to fill in" section — window, throttle
+  onset, wrap budget — the calibration work an adopting team owes its own setup.
+- Selftest: 76 checks, including the v3 acceptance rows (abstention, config-invalid
+  fallback, no-cross-weighting, throttle-zone annotation gating).
+- Design provenance: architecture designed and ruled by Rae Sun (arcgram.io);
+  drafted and adversarially hardened in multi-model AI collaboration (see README).
+
 ## 0.2.1 — 2026-09-09
 
 Denominator table refresh (sourced from the official help-center context-window

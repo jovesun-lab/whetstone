@@ -281,8 +281,9 @@ def detect_substrate(payload, cwd=""):
 def calibration_line(ctx, substrate=""):
     """One line that proves calibration happened: substrate, window, bands, mode.
 
-    The S255 law -- running is not observing -- applies to the calibrator itself: this
-    line is derived from what was actually measured, not from a baked-in table.
+    Running is not observing -- that law applies to the calibrator itself: this line
+    is derived from what was actually measured, not from a baked-in table. (Legacy
+    band display; the v3 tick shadows this with caps_calibration_line.)
     """
     mid, high, warning, danger = bands()
     lim = (ctx or {}).get("limit") or limit()

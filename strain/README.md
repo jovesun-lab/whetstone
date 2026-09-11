@@ -88,12 +88,29 @@ is this* and *can I read this session's real context size* are the same question
 Hard signals are absolute (capacity never dilutes accountability), but only the ones
 that **escaped** — reached the user or shipped work — move the tier. An error caught
 and fixed before delivery is a working immune system, not exhaustion: it is recorded,
-and a repeat of the same class earns a pattern note, without driving the tier. The
-fill bands are the primary ladder (default **40/60/75/85%** of the detected window →
-Mid/High/Warning/Danger), the tick computes and proposes the tier itself, and the
-proposal is allowed to DECAY when the load does. Nothing escalates on tick count —
-the old "continuing past a Warning ⇒ Danger" rule pinned Danger at a measured 33%
-fill, three sessions running, and is deleted.
+and a repeat of the same class earns a pattern note, without driving the tier.
+
+Since v0.3 the tier is a **two-line model** — capacity and conduct scored separately,
+then max-joined, never multiplied:
+
+- **Line A — capacity**: fill vs a cap ladder (defaults **50/60/70%** → Mid/High/Warning,
+  and **Danger is derived** = throttle onset − wrap budget, default 80 − 6 = **74%** —
+  so a mandated wrap can finish *before* the model enters its degraded zone). Line A
+  **abstains loudly** when the number can't be trusted (no measurement, or an impossible
+  percentage) — a missing measurement is never "Healthy (fill 0%)". A misconfigured
+  ladder (e.g. a raised wrap budget sliding Danger below Warning) is shouted and the
+  built-in defaults stay in force — over-report beats under.
+- **Line B — conduct**: the escaped-signal ladder (0–2 move nothing · 3 → Mid · 4 →
+  High · ≥5 → Warning). A burst of escapes usually shares one root cause — a capability
+  gap, not exhaustion — which is why small counts don't tier.
+- Compactions floor as before (1 → High, ≥2 → Warning, plus a recovery directive).
+
+The final tier is the **max** of the three — no cross-weighting. Errors inside the
+throttle zone (≥80%) are *annotated* as likely capacity-induced, never auto-escalated:
+the two lines answer different questions, and multiplying them manufactures verdicts
+neither line stated. The proposal is still allowed to DECAY when the load does, and
+nothing escalates on tick count — the old "continuing past a Warning ⇒ Danger" rule
+pinned Danger at a measured 33% fill, three sessions running, and stays deleted.
 
 A compaction is not a fresh start. It is the clearest evidence available that the session
 has run long, so it raises the floor and does not come back down.
@@ -125,13 +142,38 @@ exactly like a check that is working fine and always says Healthy.
 | `STRAIN_N` | tool calls between ticks | `10` |
 | `STRAIN_STATE_DIR` | where state lives | `~/.local/state/strain` (or `$XDG_STATE_HOME/strain`) |
 | `STRAIN_CONTEXT_LIMIT` | context window size, tokens; overrides the model-based guess | inferred from the observed model (`fable` / `[1m]` → 1M, else 200k) |
-| `STRAIN_FILL_MID` / `_HIGH` / `_WARNING` / `_DANGER` | fill % that enters each band | `40` / `60` / `75` / `85` |
+| `STRAIN_CAP_MID` / `_HIGH` / `_WARN` | fill % that enters Mid / High / Warning | `50` / `60` / `70` |
+| `STRAIN_THROTTLE_ONSET` | fill % where your platform's model visibly degrades | `80` |
+| `STRAIN_WRAP_BUDGET` | context cost of a full session wrap, in fill % | `6` |
+| *(derived)* Danger cap | `THROTTLE_ONSET − WRAP_BUDGET` — never set directly | `74` |
 | `STRAIN_SUBSTRATE` | name the shell explicitly for the calibration line | detected from the transcript path |
 | `STRAIN_NO_MODEL_LOG` | stop recording which model ran which session | unset |
 | `STRAIN_SESSION` | name the session explicitly for CLI commands | resolved from the working directory |
 
-The thresholds are a starting guess from one agent-and-user pair over a long run. Retune
-them; the readout prints the ones it used.
+**Three numbers are yours to fill in — the defaults are honest starting points, not
+facts about your setup:**
+
+1. **The window** (`STRAIN_CONTEXT_LIMIT`, or better: verify the inferred one). The
+   denominator of every percentage. Get it from your platform's official numbers, not
+   from memory — a wrong window makes every reading confidently wrong.
+2. **The throttle onset.** `80` is an observed value on one platform (2026-09): the
+   point where replies get shorter, reasoning goes quiet, narration stops. Watch for
+   where it happens on *yours*, set it, and re-verify when the platform or model
+   changes — it is a physical constant of your environment, not a preference.
+3. **The wrap budget.** `6` is an unmeasured estimate (5–8% bracket). Measure your own:
+   note the fill % right before and right after one real session wrap, and pin the
+   difference. Until you do, treat the derived Danger cap as approximate.
+
+The Line-B ladder (3/4/≥5) is deliberately **not** an env knob — it is a team policy,
+and a policy adjustable by environment fiddling can drift silently. Change it by
+editing `signal_floor` in `scripts/_strain_common.py`, so the change is visible in
+review. The readout always prints the caps it actually used.
+
+**Design provenance.** Model architecture: designed and ruled by **Rae Sun
+(arcgram.io)** — every load-bearing threshold (the throttle onset, the wrap budget,
+the Line-B ladder) is a maintainer ruling, not a model output. Drafted and
+adversarially hardened in multi-model AI collaboration; the acceptance rows in the
+selftest are the design's contract.
 
 ## Good to know
 
