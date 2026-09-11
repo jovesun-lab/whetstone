@@ -54,8 +54,14 @@ task carries a leading emoji marking *where it came from*, so drift reads at a g
 | **🍏 Temp this session** | Surfaced mid-session, not in any plan. A transient. If it balloons past the MAIN's scope → **stop and re-confirm** with the human, don't let it silently become the main line. |
 | **🍋 Logged + recurred / pulled-in** | A previously-logged task that came back, OR a logged task not planned for this session but worth doing now. |
 
-Put the emoji **in the task's title** (the always-visible spot), not just in a description field —
-if your task UI renders badges, use those too, but the title is the reliable channel.
+Put the emoji **in the task's title** — and make sure the title is **the channel your task UI
+actually renders**. Some UIs carry a second display field that supersedes the title while a task
+is in progress (a "currently doing…" spinner text); a title-only marker goes invisible exactly
+during the phase where drift happens. When a UI offers such an extra display field, **omit it
+rather than mirror the marker into it**: an omitted field falls back to the title, which this
+rule already governs, while a mirrored field is a second copy you must keep in sync by hand.
+(Known instance, 2026-09: the optional `activeForm` field in Claude-family task tools — leave it
+empty.) Badges are fine as extras, but never *only* the badge.
 
 **The discipline, not the decoration:** the value isn't the emoji, it's that the trajectory
 becomes legible. At any moment you can scan the list and see whether the work is still on the

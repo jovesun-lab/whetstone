@@ -1,6 +1,29 @@
-# Throughline v0.2.0
+# Throughline v0.2.1
 
 *Keep the thread — within a session, and across them.*
+
+## What's new in 0.2.1
+
+One rule, learned the hard way when a harness update silently changed which field a task
+UI renders:
+
+- **The marker must sit on the channel that actually renders.** Task UIs may expose more
+  than one text field per task, and a newer field can supersede the title without warning
+  — hiding a title-only ⭐️ exactly during the in-progress phase where drift happens. When
+  a UI offers an extra display field, **omit it rather than mirror the marker into it**:
+  an omitted field falls back to the title, which the rules already govern; a mirrored
+  field is a second copy kept in sync by hand. (Known instance, 2026-09: the optional
+  `activeForm` field in Claude-family task tools — leave it empty.)
+- The old wording claiming the title is "always visible no matter how the list is
+  rendered" was **falsified** by that instance and has been corrected in `SKILL.md` and
+  `references/task-track.md`; the marker-robustness note now carries three rules
+  (anchored · portable · channel).
+- Also new: if your task list renders where you cannot read it back, treat a human saying
+  "I can't see the star" as a report about the *channel*, not about your discipline.
+
+---
+
+# Throughline v0.2.0
 
 ## What's new in 0.2.0
 

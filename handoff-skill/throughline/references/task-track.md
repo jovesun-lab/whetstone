@@ -30,12 +30,13 @@ with a leading emoji that records *where it came from*:
 | **🍏 Temp this session** | Surfaced mid-session; not in any plan or log. A transient. | These are the drift carriers. Tagging them makes the transients countable at a glance. |
 | **🍋 Logged + recurred / pulled-in** | A logged task that came back, OR a logged-but-unplanned task worth doing now. | Separates "we knew about this" from "this is brand new," so recurring problems are visible. |
 
-Put the emoji **in the task title**, not only in a hidden field — the title is the channel that's
-always visible no matter how the list is rendered. If your task UI also shows badges, use them
-too, but never *only* the badge.
+Put the emoji **in the task title**, not only in a hidden field — and treat "which field does
+this UI actually render?" as a real question, not a given: the title is the *default* display
+channel, but a UI can carry a second field that supersedes it (see the third marker rule below).
+If your task UI also shows badges, use them too, but never *only* the badge.
 
-**A note on the marker (so it stays robust, not fragile).** Two rules keep the ⭐️ MAIN trustworthy
-when something *parses* the list rather than just reads it:
+**A note on the marker (so it stays robust, not fragile).** Three rules keep the ⭐️ MAIN
+trustworthy — the first two against parsers, the third against the rendering surface itself:
 
 - **The marker is anchored — it lives at the START of the task line/heading.** A ⭐ that happens to
   appear mid-sentence ("this is worth 5⭐") is decoration, not an anchor, and must not be counted as
@@ -46,6 +47,15 @@ when something *parses* the list rather than just reads it:
   Pick whichever survives your tools — the rule is unchanged: **exactly one anchored marker.** This
   mirrors the skill's capability-agnostic stance; the discipline shouldn't hinge on a glyph
   rendering.
+- **The marker must sit on the channel that actually renders.** Task UIs may expose more than one
+  text field per task, and a newer field can supersede the title without warning. (Known
+  instance, 2026-09: an optional `activeForm` spinner text in Claude-family task tools replaced
+  the title exactly while tasks were in progress — hiding the ⭐ during the one phase where drift
+  happens.) When a UI offers an extra display field, **omit it rather than mirror the marker into
+  it**: omitted falls back to the title, which these rules already govern; mirrored is a second
+  copy kept in sync by hand. And because an agent usually cannot read back its own rendered task
+  list, treat a human saying "I can't see the star" as a report about the *channel*, not about
+  your discipline.
 
 ## How to run it
 
