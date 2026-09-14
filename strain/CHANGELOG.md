@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.0 — 2026-09-13
+
+**The combination alarm.** The two lines still score separately, but their combination
+can now raise the alarm the way the model's owner originally designed it:
+
+- **Composite**: fill already inside the Warning/Danger caps **and** escaped ≥ 3 →
+  **Danger**, as a fourth `max()` term with a loud basis line naming both conditions.
+  Not a weight, not a multiplier — it names the one compound state (*running on a
+  full window and repeatedly shipping errors*) that is more dangerous than either
+  line reports alone, and it needs BOTH preconditions: high fill with ≤2 escapes
+  stays a capacity story; a burst of escapes on a half-empty window stays a conduct
+  story. Review found 0.3.0's composite deletion had shipped without the owner's
+  ratification; the cruder v2 composite (no capacity precondition) stays deleted.
+- Throttle-zone errors still annotate, never auto-escalate; decay and the tick-count
+  non-rule are unchanged.
+- Selftest 78/78, including a loud-fire row and a precondition-unmet row.
+
 ## 0.3.0 — 2026-09-11
 
 **The two-line tier model.** Capacity and conduct are now scored on separate lines and

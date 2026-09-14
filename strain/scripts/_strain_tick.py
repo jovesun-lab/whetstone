@@ -77,13 +77,19 @@ def propose_tier(st, ctx):
     Line B = the escaped-signal ladder (signal_floor -- ONE home for the policy).
     Compaction floor rides as a third max() term.
 
-    Synthesis is max() and NOTHING ELSE -- no cross-weighting. Errors inside the
-    throttle zone are ANNOTATED as likely capacity-induced, never auto-escalated:
-    the two lines answer different questions (is the window full? / is work escaping
-    wrong?) and multiplying them manufactures verdicts neither line stated. The v2
-    composite ("escaped signal past the Warning band => Danger") is deleted for that
-    reason. Tick count never escalates anything -- v1's tick-ratchet pinned Danger at
-    a measured 33%% fill, three fixtures running, and stays deleted.
+    Synthesis: each line scores SEPARATELY, then ONE alarm comes out of max() plus a
+    single COMBINATION term -- the composite: fill already inside the Warning/Danger
+    caps AND escaped >= 3 -> Danger, printed loudly whenever it fires. The two lines
+    answer different questions (is the window full? / is work escaping wrong?); the
+    composite does not weight or multiply them -- it names the one compound state
+    ("running on a full window AND repeatedly shipping errors") that is more dangerous
+    than either line says alone, and it needs BOTH preconditions. Errors inside the
+    throttle zone are still ANNOTATED as likely capacity-induced, never
+    auto-escalated. The cruder v2 composite ("escaped signal past the Warning band =>
+    Danger" -- no capacity precondition) stays deleted; this is the owner's v0.6
+    two-condition design, restored 2026-09-13 after review found the deletion had
+    shipped unratified. Tick count never escalates anything -- v1's tick-ratchet
+    pinned Danger at a measured 33%% fill, three fixtures running, and stays deleted.
     Returns (tier, basis, directives)."""
     ctx = ctx or {}
     mid, high, warn, danger, throttle, invalid = _caps()
@@ -129,10 +135,17 @@ def propose_tier(st, ctx):
         directives.append("RECOVERY DIRECTIVE: context was cut unfiltered (%d time%s)"
                           " -- re-read the goal anchor and the handoff."
                           % (comp, "s" if comp > 1 else ""))
+    # The combination alarm: both preconditions, loud print, no weighting.
+    line_d = "Healthy"
+    if a_scored and line_a in ("Warning", "Danger") and escaped >= 3:
+        line_d = "Danger"
+        logs.append("composite: fill already %s AND escaped %d >= 3 -> Danger"
+                    % (line_a, escaped))
     val_a = TIERS.index(line_a) if a_scored else 0
     val_b = TIERS.index(line_b)
     val_c = TIERS.index(line_c)
-    final = max(val_a, val_b, val_c)
+    val_d = TIERS.index(line_d)
+    final = max(val_a, val_b, val_c, val_d)
     tier = TIERS[final]
     if val_b > val_a and val_b == final:
         logs.append("tier clamped by Line B (escaped conduct)")

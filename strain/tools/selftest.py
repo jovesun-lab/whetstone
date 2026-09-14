@@ -428,9 +428,11 @@ def main():
         out, _, _ = tick(gdir, "sess-P", n=1, transcript=npath)
         check("escaped floors survive a low-fill tick",
               "PROPOSED TIER: Warning" in out, out[:400])
-        # v3: max() synthesis, NO cross-weighting -- Warning-cap fill (72%, below the
-        # derived Danger cap 74) plus 3 escaped stays Warning; the throttle-zone note
-        # annotates and never tiers.
+        # v4 COMBINATION ALARM (owner's two-condition composite, restored 2026-09-13):
+        # Warning-cap fill (72%, below the derived Danger cap 74) AND >=3 escaped ->
+        # Danger, with a loud basis line naming both conditions. Below either
+        # precondition the lines stay independent (max only); the throttle-zone note
+        # still annotates and never tiers.
         wdir = os.path.join(tmp, "s9b")
         wpath = os.path.join(tmp, "warnfill.jsonl")
         make_transcript(wpath, [(2, 10000, 0), (2, 144000, 0)])   # 72% of 200k
@@ -438,8 +440,22 @@ def main():
             run("_strain_signal.py", None, [kk, "--escaped", "--session", "sess-Q"],
                 {"STRAIN_STATE_DIR": wdir})
         out, _, _ = tick(wdir, "sess-Q", n=1, transcript=wpath)
-        check("v3 no cross-weighting: Warning fill + 3 escaped stays Warning (max)",
-              "PROPOSED TIER: Warning" in out and "Line B Mid" in out, out[:400])
+        check("v4 composite: Warning fill + 3 escaped -> Danger",
+              "PROPOSED TIER: Danger" in out and "Line B Mid" in out, out[:400])
+        check("v4 composite fires LOUDLY (basis names both conditions)",
+              "composite: fill already Warning AND escaped 3 >= 3 -> Danger" in out,
+              out[:600])
+        # v4 composite NEGATIVE (capacity precondition unmet): High-cap fill (65%)
+        # + 3 escaped stays High -- the combination alarm needs Warning+ fill.
+        hdir = os.path.join(tmp, "s9c")
+        hpath = os.path.join(tmp, "highfill.jsonl")
+        make_transcript(hpath, [(2, 10000, 0), (2, 130000, 0)])   # 65% of 200k
+        for kk in ("h1", "h2", "h3"):
+            run("_strain_signal.py", None, [kk, "--escaped", "--session", "sess-R"],
+                {"STRAIN_STATE_DIR": hdir})
+        out, _, _ = tick(hdir, "sess-R", n=1, transcript=hpath)
+        check("v4 composite precondition: High fill + 3 escaped stays High",
+              "PROPOSED TIER: High" in out and "composite" not in out, out[:400])
         _, err, rc = run("_strain_signal.py", None, ["oops", "--session", "sess-Q"],
                          {"STRAIN_STATE_DIR": wdir})
         check("a signal must say caught or escaped", rc == 2 and "say whether" in err,

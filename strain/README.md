@@ -90,8 +90,8 @@ that **escaped** — reached the user or shipped work — move the tier. An erro
 and fixed before delivery is a working immune system, not exhaustion: it is recorded,
 and a repeat of the same class earns a pattern note, without driving the tier.
 
-Since v0.3 the tier is a **two-line model** — capacity and conduct scored separately,
-then max-joined, never multiplied:
+Since v0.3 the tier is a **two-line model** — capacity and conduct scored separately;
+since v0.4 their **combination** can also raise the alarm (see below):
 
 - **Line A — capacity**: fill vs a cap ladder (defaults **50/60/70%** → Mid/High/Warning,
   and **Danger is derived** = throttle onset − wrap budget, default 80 − 6 = **74%** —
@@ -105,10 +105,16 @@ then max-joined, never multiplied:
   gap, not exhaustion — which is why small counts don't tier.
 - Compactions floor as before (1 → High, ≥2 → Warning, plus a recovery directive).
 
-The final tier is the **max** of the three — no cross-weighting. Errors inside the
-throttle zone (≥80%) are *annotated* as likely capacity-induced, never auto-escalated:
-the two lines answer different questions, and multiplying them manufactures verdicts
-neither line stated. The proposal is still allowed to DECAY when the load does, and
+The final tier is the **max** of the three, plus one **combination alarm** (v0.4): when
+Line A is already at Warning/Danger **and** the escaped count has reached 3, the
+composite tops the proposal out at **Danger**, with a loud basis line naming both
+conditions. It is not a weight or a multiplier — it names the one compound state
+(*running on a full window AND repeatedly shipping errors*) that is more dangerous
+than either line says alone, and it fires only when BOTH preconditions hold: high fill
+with ≤2 escapes stays a capacity story, and a burst of escapes on a half-empty window
+stays a conduct story, each on its own ladder. Errors inside the throttle zone (≥80%)
+are still *annotated* as likely capacity-induced, never auto-escalated: the two lines
+answer different questions. The proposal is still allowed to DECAY when the load does, and
 nothing escalates on tick count — the old "continuing past a Warning ⇒ Danger" rule
 pinned Danger at a measured 33% fill, three sessions running, and stays deleted.
 
