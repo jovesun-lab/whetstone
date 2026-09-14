@@ -153,6 +153,7 @@ exactly like a check that is working fine and always says Healthy.
 | `STRAIN_WRAP_BUDGET` | context cost of a full session wrap, in fill % | `6` |
 | *(derived)* Danger cap | `THROTTLE_ONSET − WRAP_BUDGET` — never set directly | `74` |
 | `STRAIN_SUBSTRATE` | name the shell explicitly for the calibration line | detected from the transcript path |
+| `STRAIN_DRIFT_GLANCE` | `off` drops the tick's goal-drift glance (a non-flooring ask to check your task track for a side task outgrowing the marked MAIN goal — pairs with throughline's convention; drift is a note, never a tier input) | `on` |
 | `STRAIN_NO_MODEL_LOG` | stop recording which model ran which session | unset |
 | `STRAIN_SESSION` | name the session explicitly for CLI commands | resolved from the working directory |
 

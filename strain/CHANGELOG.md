@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1 — 2026-09-13
+
+**The drift glance.** The tick now also asks the agent to glance whatever task track
+it keeps (a list with one marked MAIN goal — throughline's convention, or your own):
+a side task ballooning past the MAIN is goal drift, surfaced as a note in the reply.
+Deliberately NON-FLOORING — drift is self-reported evidence and never a tier input —
+and conditional: `STRAIN_DRIFT_GLANCE=off` drops the sentence. Selftest 80/80.
+
 ## 0.4.0 — 2026-09-13
 
 **The combination alarm.** The two lines still score separately, but their combination

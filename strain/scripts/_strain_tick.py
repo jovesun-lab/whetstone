@@ -208,6 +208,18 @@ def build_directive(n, st, ctx, substrate=""):
                      " something the counters cannot see says otherwise.")
     except ValueError:
         pass
+    # Drift glance (0.4.1): conditional, generic, NON-FLOORING. A one-sentence ask to
+    # glance whatever task track the agent keeps; goal drift is self-reported evidence
+    # and is never a tier input. STRAIN_DRIFT_GLANCE=off drops the sentence.
+    glance = ""
+    if os.environ.get("STRAIN_DRIFT_GLANCE", "on").strip().lower() not in (
+            "off", "0", "no"):
+        glance = (
+            " ALSO glance your task track if you keep one (a list with one marked"
+            " MAIN goal, e.g. throughline's convention): a side task ballooning past"
+            " the MAIN is GOAL DRIFT -- surface it as a note in your reply; it never"
+            " moves the tier (self-reported evidence does not floor)."
+            " STRAIN_DRIFT_GLANCE=off drops this line.")
     return (
         "\U0001FA7A STRAIN TICK (%d tool calls since the last check)."
         " PROPOSED TIER: %s (%s); carried: %s.%s%s"
@@ -219,8 +231,8 @@ def build_directive(n, st, ctx, substrate=""):
         " immune system and moves nothing (say so, don't tier on it). Never escalate"
         " because ticks accumulated or because the previous check was high -- fill and"
         " fresh signals are the only ladders. An unrecorded tier is how this reading"
-        " silently stays at its first value. [%s]"
-        % (n, proposed, basis, carried, decay, "".join(bits),
+        " silently stays at its first value.%s [%s]"
+        % (n, proposed, basis, carried, decay, "".join(bits), glance,
            caps_calibration_line(ctx, substrate or st.get("substrate", "")))
     )
 

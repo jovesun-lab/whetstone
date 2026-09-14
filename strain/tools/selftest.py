@@ -456,6 +456,18 @@ def main():
         out, _, _ = tick(hdir, "sess-R", n=1, transcript=hpath)
         check("v4 composite precondition: High fill + 3 escaped stays High",
               "PROPOSED TIER: High" in out and "composite" not in out, out[:400])
+        # 0.4.1 drift glance: conditional, generic, non-flooring -- present by
+        # default, dropped by STRAIN_DRIFT_GLANCE=off, and never a tier input
+        # (the proposed tier is identical with and without it).
+        out_on, _, _ = tick(hdir, "sess-R", n=1, transcript=hpath)
+        check("drift glance rides the tick by default (non-flooring note)",
+              "GOAL DRIFT" in out_on and "never" in out_on
+              and "PROPOSED TIER: High" in out_on, out_on[:700])
+        out_off, _, _ = tick(hdir, "sess-R", n=1, transcript=hpath,
+                             extra_env={"STRAIN_DRIFT_GLANCE": "off"})
+        check("STRAIN_DRIFT_GLANCE=off drops the glance, tier unchanged",
+              "GOAL DRIFT" not in out_off and "PROPOSED TIER: High" in out_off,
+              out_off[:400])
         _, err, rc = run("_strain_signal.py", None, ["oops", "--session", "sess-Q"],
                          {"STRAIN_STATE_DIR": wdir})
         check("a signal must say caught or escaped", rc == 2 and "say whether" in err,
