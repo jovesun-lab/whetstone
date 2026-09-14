@@ -86,8 +86,9 @@ def propose_tier(st, ctx):
     than either line says alone, and it needs BOTH preconditions. Errors inside the
     throttle zone are still ANNOTATED as likely capacity-induced, never
     auto-escalated. The cruder v2 composite ("escaped signal past the Warning band =>
-    Danger" -- no capacity precondition) stays deleted; this is the owner's v0.6
-    two-condition design, restored 2026-09-13 after review found the deletion had
+    Danger" -- no capacity precondition) stays deleted; this is the owner's original
+    two-condition design (from an internal pre-release iteration, never a formal
+    release of this plugin), restored 2026-09-13 after review found the deletion had
     shipped unratified. Tick count never escalates anything -- v1's tick-ratchet
     pinned Danger at a measured 33%% fill, three fixtures running, and stays deleted.
     Returns (tier, basis, directives)."""

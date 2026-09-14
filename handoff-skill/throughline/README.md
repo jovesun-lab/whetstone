@@ -35,6 +35,11 @@ holds it *within* a run; the handoff's **⭐️ Goal** carries it *across* runs.
 - **Multi-agent rules** — one writer per shared artifact; the docs, not chat history, are the
   coordination channel.
 - **A companion meter** — [strain](../../strain) says *when* to wrap; Throughline is *how*.
+  When the two run together, strain's periodic tick (every N tool calls) doubles as the
+  task-track re-read moment: each tick is the cue to glance the list — is the ⭐️ MAIN still
+  the thing being worked on, or has a side task ballooned past it? Strain 0.4.1 asks for
+  exactly this glance in its tick line; drift found this way is reported as a note, never
+  fed into strain's tier.
 
 ## How the two halves connect
 
