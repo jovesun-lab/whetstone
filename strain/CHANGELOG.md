@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.5.0 — 2026-09-18
+
+**Signed wraps and the project ledger.** The wrap marker is one file per state dir,
+and that bit the moment a second agent shared a machine: agent A marking its wrap
+reset agent B's LIVE session at B's next session start — real strain, wiped by someone
+else's finish line. The path cannot tell agents apart, so identity is declared:
+
+- **`strain-sign.sh --agent <name>`** names this session's agent. A wrap marked by a
+  signed session carries that signature (or pass `--agent` to `strain-wrap.sh`), and a
+  signed marker resets **only sessions with the same signature** — others keep their
+  counters and get one line, once per marker, saying whose it is (with a sign-to-join
+  hint for unsigned sessions). An **unsigned marker behaves exactly as before**:
+  signing is opt-in.
+- **`--ledger <path>`** (optional) adds an append-only JSONL account book — suggest
+  `Log.strain` at the project root, gitignored — receiving one `boot-sign` row at
+  signing and one `wrap` row (verdict, label, tier, tick) at wrap. It records the
+  project's chain of sessions without ever inheriting counters across them (one
+  session, one reading, unchanged). Appends are flock-guarded; rows land whole under
+  concurrent writers.
+- **Index guard**: an existing but unreadable `index.json` now REFUSES the rewrite —
+  a bad read fed straight into a save used to replace the whole registry with one
+  fresh row. Same discipline as the append-only book: rows must not evaporate.
+- Selftest 92/92 (12 new: sign/ledger rows, signature-scoped consume both ways, the
+  once-per-marker line, unsigned-marker compatibility, 20-thread flock append, the
+  index refusal).
+
 ## 0.4.1 — 2026-09-13
 
 **The drift glance.** The tick now also asks the agent to glance whatever task track

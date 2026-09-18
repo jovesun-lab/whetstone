@@ -130,7 +130,15 @@ def touch_index(sdir, sid, cwd):
     """
     if not sid:
         return
-    idx = load(index_path(sdir))
+    ip = index_path(sdir)
+    existed = os.path.isfile(ip)
+    idx = load(ip)
+    if existed and not idx:
+        # The index exists but could not be read: refuse the rewrite. load()'s {} fed
+        # into save() would replace the whole file with this one entry -- a bad read
+        # must not evaporate everyone else's rows. Skipping one best-effort update is
+        # the cheap side of that trade.
+        return
     entries = idx.get("by_cwd") if isinstance(idx.get("by_cwd"), dict) else {}
     key = cwd or "-"
     entries[key] = {"sid": sid, "ts": now_iso()}
@@ -247,3 +255,51 @@ def read_payload(stdin):
         return p if isinstance(p, dict) else {}
     except Exception:
         return {}
+
+
+# ---- the project ledger (0.5.0) ------------------------------------------------------
+# A durable, append-only account book a project can keep of its sessions: one JSONL row
+# per event (boot-sign, wrap). Optional -- nothing here runs unless a session signs with
+# a ledger path. The file lives wherever you point it; we suggest `Log.strain` at the
+# project root, gitignored. Append-only on purpose: an account book that gets rewritten
+# whole is one bad read away from evaporating (the same failure class the index guard
+# below refuses).
+
+def ledger_append(path, row):
+    """Append ONE JSONL row, flock-guarded so two agents signing or wrapping at the
+    same moment cannot interleave. Creates the file on first append; never rewrites
+    existing content. Returns True on success."""
+    try:
+        import fcntl
+        line = json.dumps(row) + "\n"
+        with open(path, "a") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                f.write(line)
+                f.flush()
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+        return True
+    except Exception:
+        return False
+
+
+def ledger_rows(path):
+    """The ledger's rows, file order. Unparseable lines are skipped, never fatal -- a
+    torn tail must not hide the rest of the book."""
+    rows = []
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                    if isinstance(r, dict):
+                        rows.append(r)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return rows

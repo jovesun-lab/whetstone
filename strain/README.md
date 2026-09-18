@@ -76,6 +76,31 @@ session slot, so a second session simply overwrote the first and both counters b
 meaningless. The session id is also how the host names the transcript — so *whose strain
 is this* and *can I read this session's real context size* are the same question.
 
+## Signed wraps and the project ledger
+
+The wrap marker is one file per state dir — and that bites the moment a second agent
+shares the machine: agent A marking its wrap used to reset agent B's **live** session at
+B's next session start. Real strain, wiped by someone else's finish line. The path cannot
+tell agents apart (two windows on one project look identical to the hooks), so identity
+is **declared**, not derived:
+
+```
+bash "$CLAUDE_PLUGIN_ROOT/scripts/strain-sign.sh" --agent ana --ledger ./Log.strain
+```
+
+Signing names this session's agent. A wrap marked by a signed session carries that
+signature, and a signed marker resets **only sessions with the same signature** — others
+keep their counters and get one line saying whose marker it is. An unsigned marker
+behaves exactly as before: signing is opt-in, and only matters once a second agent shows
+up.
+
+The `--ledger` part is optional and adds a durable account book: an append-only JSONL
+file (suggest `Log.strain` at the project root, gitignored) that receives one
+`boot-sign` row when a session signs and one `wrap` row (verdict, label, tier, tick)
+when it wraps. It records the project's chain of sessions — who worked, when, wrapped
+how — and it never inherits counters across sessions: one session, one reading,
+unchanged. Appends are flock-guarded, so concurrent signers cannot tear a row.
+
 ## What it counts
 
 **Context occupancy**, when measurable. Plus behaviour, always:
@@ -135,6 +160,7 @@ All of these live in the plugin folder, so the agent runs them as
 | `strain-signal.sh --list` | print this session's signal ledger |
 | `strain-wrap.sh --label "…"` | mark the work wrapped; resets the counters once, at the next session start |
 | `strain-wrap.sh --status` | show the current wrap marker |
+| `strain-sign.sh --agent <name> [--ledger <path>]` | declare who works this session; scope wraps to that signature, optionally book boot-sign/wrap rows into a project ledger |
 
 `strain-level.sh` prints which session it resolved and where it wrote. That is deliberate:
 in an earlier build the writer defaulted to a different file from the one the hooks read,

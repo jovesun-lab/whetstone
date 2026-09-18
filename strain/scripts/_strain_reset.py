@@ -9,6 +9,9 @@ does not mark a unit of work. Finishing does. `strain-wrap.sh` writes the marker
 your handoff step does), and the next session start consumes it exactly once.
 
     marker present, unconsumed -> reset the counters, record that it was consumed
+    marker SIGNED (0.5.0)      -> reset only sessions carrying the same signature;
+                                  someone else's finish line must not wipe your live
+                                  counters (announced once, then quiet)
     no marker                  -> keep counting (over-reporting beats wiping)
     `compact` source           -> not a fresh start: increment compactions and raise the
                                   tier floor, one way
@@ -66,11 +69,26 @@ def main():
     if model:
         st["model"] = model
 
-    # THE RESET DECISION -- the wrap marker, nothing else.
+    # THE RESET DECISION -- the wrap marker, nothing else. 0.5.0 adds SCOPE: a marker
+    # signed by an agent (strain-sign.sh / strain-wrap.sh --agent) resets only sessions
+    # carrying the same signature. Shipped failure this closes: two agents, one state
+    # dir -- one agent marking its wrap reset the other's LIVE session at its next
+    # session start, wiping real strain with someone else's finish line. An unsigned
+    # marker keeps the pre-0.5.0 behaviour exactly (signing is opt-in).
     marker = load(wrap_path(sdir))
     marker_ts = str(marker.get("ts", "") or "")
     unconsumed = bool(marker_ts) and marker_ts != str(st.get("consumed_wrap", ""))
-    reset = unconsumed and marker.get("verdict", "CLEAN") in ("CLEAN", "CLEAN-WITH-DEBT")
+    clean = marker.get("verdict", "CLEAN") in ("CLEAN", "CLEAN-WITH-DEBT")
+    m_agent = str(marker.get("agent", "") or "")
+    mine = str(st.get("agent", "") or "")
+    scoped_ok = (not m_agent) or (m_agent == mine)
+    reset = unconsumed and clean and scoped_ok
+    foreign = unconsumed and clean and not scoped_ok
+    # A foreign marker is announced ONCE, then stays quiet -- a host may fire
+    # SessionStart every turn, and a repeated line is noise, not information.
+    foreign_new = foreign and str(st.get("foreign_wrap_seen", "")) != marker_ts
+    if foreign_new:
+        st["foreign_wrap_seen"] = marker_ts
     if reset:
         st["tick"] = 0
         st["compactions"] = 0
@@ -108,7 +126,15 @@ def main():
     bits.append(ctxmod.calibration_line(st.get("ctx") or {}, st.get("substrate", "")) + ".")
     if reset:
         who = marker.get("label") or marker.get("session") or "a completed wrap"
+        if m_agent:
+            who = "%s (signed %s)" % (who, m_agent)
         bits.append("Strain counters reset on %s." % who)
+    elif foreign_new:
+        bits.append("A wrap marker signed by %s is present; this session keeps its "
+                    "counters (different signature%s)."
+                    % (m_agent,
+                       "" if mine else " -- this session is unsigned; "
+                       "strain-sign.sh --agent <name> to scope wraps"))
     if st.get("last", "Healthy") != "Healthy":
         bits.append("Carried strain tier: %s." % st["last"])
     if int(st.get("tick", 0)) > 0 and not reset:

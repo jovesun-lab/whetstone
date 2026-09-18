@@ -501,6 +501,99 @@ def main():
         check("a wrap reset clears the signal ledger",
               st.get("signals") == [] and st.get("last") == "Healthy", st)
 
+        # ---- 0.5.0: signed wraps + the project ledger ----------------------------------
+        # The shipped failure this section locks: two agents, one state dir -- one
+        # agent's wrap marker reset the other's LIVE session at its next start.
+        wdir = os.path.join(tmp, "signed")
+        os.makedirs(wdir, exist_ok=True)
+        proj = os.path.join(tmp, "signed-proj")
+        os.makedirs(proj, exist_ok=True)
+        book = os.path.join(proj, "Log.strain")
+        tick(wdir, "sess-A1", cwd="/tmp/proj-a")     # two live sessions, two agents
+        tick(wdir, "sess-B1", cwd="/tmp/proj-b")
+        tick(wdir, "sess-B1", cwd="/tmp/proj-b")
+        out, err, rc = run("_strain_sign.py", None,
+                           ["--agent", "ana", "--session", "sess-A1", "--ledger", book],
+                           {"STRAIN_STATE_DIR": wdir})
+        check("sign records agent + ledger in the session state",
+              rc == 0 and state_of(wdir, "sess-A1").get("agent") == "ana"
+              and state_of(wdir, "sess-A1").get("ledger") == book
+              and "signed ana" in out, (rc, out, state_of(wdir, "sess-A1")))
+        with open(book) as f:
+            rows = [json.loads(l) for l in f if l.strip()]
+        check("sign appends a boot-sign row to the ledger",
+              len(rows) == 1 and rows[0].get("type") == "boot-sign"
+              and rows[0].get("agent") == "ana"
+              and rows[0].get("session") == "sess-A1", rows)
+        run("_strain_sign.py", None, ["--agent", "bo", "--session", "sess-B1"],
+            {"STRAIN_STATE_DIR": wdir})
+        out, err, rc = run("_strain_wrap.py", None,
+                           ["--label", "ana done", "--session", "sess-A1"],
+                           {"STRAIN_STATE_DIR": wdir})
+        check("wrap inherits the wrapping session's signature (no --agent needed)",
+              rc == 0 and "by ana" in out, (rc, out))
+        with open(book) as f:
+            rows = [json.loads(l) for l in f if l.strip()]
+        check("a signed session's wrap is booked as a ledger row",
+              len(rows) == 2 and rows[1].get("type") == "wrap"
+              and rows[1].get("agent") == "ana"
+              and rows[1].get("verdict") == "CLEAN", rows)
+        out, _, _ = start(wdir, "sess-B1", source="resume", cwd="/tmp/proj-b")
+        stB = state_of(wdir, "sess-B1")
+        check("ana's signed marker does NOT reset bo's live counters",
+              stB.get("tick") == 2 and stB.get("consumed_wrap", "") == ""
+              and "signed by ana" in out and "keeps its counters" in out,
+              (stB, out[:300]))
+        out, _, _ = start(wdir, "sess-B1", source="resume", cwd="/tmp/proj-b")
+        check("the foreign-marker line prints once per marker, not per turn",
+              "signed by ana" not in out, out[:300])
+        out, _, _ = start(wdir, "sess-A1", source="resume", cwd="/tmp/proj-a")
+        stA = state_of(wdir, "sess-A1")
+        check("the same signature still consumes and resets",
+              stA.get("tick") == 0 and bool(stA.get("consumed_wrap"))
+              and "signed ana" in out, (stA, out[:300]))
+        check("the reset keeps the signature and the ledger binding",
+              stA.get("agent") == "ana" and stA.get("ledger") == book, stA)
+        # unsigned marker = pre-0.5.0 behaviour, exactly (signing is opt-in)
+        tick(wdir, "sess-C1", cwd="/tmp/proj-c")
+        run("_strain_wrap.py", None, ["--session", "sess-C1"],
+            {"STRAIN_STATE_DIR": wdir})
+        start(wdir, "sess-B1", source="resume", cwd="/tmp/proj-b")
+        check("an unsigned marker still resets everyone (backward compatible)",
+              state_of(wdir, "sess-B1").get("tick") == 0, state_of(wdir, "sess-B1"))
+        # an unsigned session facing a signed marker is told how to join in
+        tick(wdir, "sess-D1", cwd="/tmp/proj-d")
+        run("_strain_wrap.py", None, ["--agent", "ana", "--session", "sess-A1"],
+            {"STRAIN_STATE_DIR": wdir})
+        out, _, _ = start(wdir, "sess-D1", source="resume", cwd="/tmp/proj-d")
+        check("an unsigned session keeps counters against a signed marker + gets the hint",
+              state_of(wdir, "sess-D1").get("tick") == 1
+              and "strain-sign.sh" in out, (state_of(wdir, "sess-D1"), out[:300]))
+        # the ledger survives concurrent writers -- every row lands whole
+        import threading
+        sys.path.insert(0, SCRIPTS)
+        import _strain_common as _C
+        cbook = os.path.join(proj, "Concurrent.strain")
+        ths = [threading.Thread(target=_C.ledger_append,
+                                args=(cbook, {"type": "boot-sign", "i": i}))
+               for i in range(20)]
+        [t.start() for t in ths]; [t.join() for t in ths]
+        got = _C.ledger_rows(cbook)
+        check("20 concurrent ledger appends = 20 intact rows (flock)",
+              len(got) == 20 and sorted(r.get("i") for r in got) == list(range(20)),
+              (len(got), got[:3]))
+        # the index guard: an unreadable index refuses the rewrite
+        bdir = os.path.join(tmp, "badidx")
+        os.makedirs(bdir, exist_ok=True)
+        with open(os.path.join(bdir, "index.json"), "w") as f:
+            f.write("{corrupt")
+        tick(bdir, "sess-X1", cwd="/tmp/proj-x")
+        with open(os.path.join(bdir, "index.json")) as f:
+            kept = f.read()
+        check("an unreadable index refuses the rewrite (rows cannot evaporate)",
+              kept == "{corrupt"
+              and state_of(bdir, "sess-X1").get("tick") == 1, kept)
+
         # ---- no absolute paths baked into the shipped config ---------------------------
         hooks = os.path.join(os.path.dirname(HERE), "hooks", "hooks.json")
         with open(hooks) as f:
