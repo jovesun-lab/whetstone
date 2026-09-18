@@ -100,6 +100,8 @@ file (suggest `Log.strain` at the project root, gitignored) that receives one
 when it wraps. It records the project's chain of sessions — who worked, when, wrapped
 how — and it never inherits counters across sessions: one session, one reading,
 unchanged. Appends are flock-guarded, so concurrent signers cannot tear a row.
+The path needs saying only **once** (0.5.1): it is remembered per agent
+(`ledgers.json` in the state dir), so later sessions sign with `--agent` alone.
 
 ## What it counts
 

@@ -284,6 +284,44 @@ def ledger_append(path, row):
         return False
 
 
+def ledgers_registry_path(sdir):
+    return os.path.join(sdir, "ledgers.json")
+
+
+def load_ledgers(sdir):
+    """0.5.1: the per-AGENT durable ledger registry -- cross-session memory for
+    'where is my book', so a later session signs with no --ledger. A convenience
+    pointer, never identity: identity stays in the ledger's own signed rows."""
+    d = load(ledgers_registry_path(sdir))
+    return d if isinstance(d, dict) else {}
+
+
+def save_ledgers(sdir, agent, ledger):
+    """Upsert one agent's row, flock-guarded, refusing to rewrite an EXISTING but
+    unreadable registry (a bad read must not evaporate everyone else's rows --
+    the same discipline as touch_index)."""
+    try:
+        import fcntl
+        ip = ledgers_registry_path(sdir)
+        lock = open(ip + ".lock", "w")
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            existed = os.path.isfile(ip)
+            reg = load(ip)
+            if existed and not reg:
+                return False
+            reg[str(agent)] = {"ledger": str(ledger), "ts": now_iso()}
+            return save(ip, reg)
+        finally:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+            except Exception:
+                pass
+            lock.close()
+    except Exception:
+        return False
+
+
 def ledger_rows(path):
     """The ledger's rows, file order. Unparseable lines are skipped, never fatal -- a
     torn tail must not hide the rest of the book."""

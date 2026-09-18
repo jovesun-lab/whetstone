@@ -24,7 +24,13 @@ import argparse, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (state_dir, session_path, load, save, now_iso,
-                            resolve_sid, ledger_append)
+                            resolve_sid, ledger_append, load_ledgers, save_ledgers)
+
+# ---- CHAT SURFACE, two registers (0.5.1) ---------------------------------------------
+# stdout is USER-SURFACE: what a person reads -- Owner-form, plain words, no flags,
+# no filesystem paths (the selftest asserts this stays true). stderr is
+# AGENT-DIRECTED detail -- paths, resolution basis -- for the agent to consume and
+# relay in plain words, never to paste raw into a chat.
 
 
 def main(argv):
@@ -51,23 +57,42 @@ def main(argv):
     st = load(path)
     st.setdefault("sid", sid)
     st["agent"] = agent
-    ledger = args.ledger or str(st.get("ledger") or "")
+    # 0.5.1 ledger resolution: explicit --ledger > this session's state > the
+    # per-agent durable registry (so a later session signs with no --ledger at
+    # all). The registry is a convenience pointer, never identity, and never
+    # lends across agents.
+    ledger_how = "none"
     if args.ledger:
         ledger = os.path.abspath(args.ledger)
+        ledger_how = "explicit"
+    else:
+        ledger = str(st.get("ledger") or "")
+        if ledger:
+            ledger_how = "session-state"
+        else:
+            ledger = str((load_ledgers(sdir).get(str(agent)) or {})
+                         .get("ledger") or "")
+            if ledger:
+                ledger_how = "registry"
+    if ledger:
         st["ledger"] = ledger
     if not save(path, st):
         sys.stderr.write("could not write state to %s\n" % path)
         return 1
 
-    note = ""
+    book_note = ""
     if ledger:
         row = {"type": "boot-sign", "ts": now_iso(), "session": sid, "agent": agent}
         if ledger_append(ledger, row):
-            note = " -- boot-sign row appended to %s" % ledger
+            book_note = " · booked"
+            save_ledgers(sdir, agent, ledger)
         else:
-            note = " -- WARNING: could not append to ledger %s" % ledger
-    sys.stdout.write("signed %s (session %s, resolved via %s)%s\n"
-                     % (agent, sid[:12], how, note))
+            book_note = " · WARNING: the book could not be written"
+    sys.stdout.write("Strain · Owner: %s — signed%s\n" % (agent, book_note))
+    sys.stderr.write("details: session %s (via %s)%s\n"
+                     % (sid[:12], how,
+                        (" · ledger %s (via %s)" % (ledger, ledger_how))
+                        if ledger else " · no ledger"))
     return 0
 
 

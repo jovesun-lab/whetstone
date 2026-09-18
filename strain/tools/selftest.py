@@ -518,7 +518,7 @@ def main():
         check("sign records agent + ledger in the session state",
               rc == 0 and state_of(wdir, "sess-A1").get("agent") == "ana"
               and state_of(wdir, "sess-A1").get("ledger") == book
-              and "signed ana" in out, (rc, out, state_of(wdir, "sess-A1")))
+              and "Strain · Owner: ana" in out, (rc, out, state_of(wdir, "sess-A1")))
         with open(book) as f:
             rows = [json.loads(l) for l in f if l.strip()]
         check("sign appends a boot-sign row to the ledger",
@@ -531,7 +531,7 @@ def main():
                            ["--label", "ana done", "--session", "sess-A1"],
                            {"STRAIN_STATE_DIR": wdir})
         check("wrap inherits the wrapping session's signature (no --agent needed)",
-              rc == 0 and "by ana" in out, (rc, out))
+              rc == 0 and "Strain · Owner: ana — wrap marked" in out, (rc, out))
         with open(book) as f:
             rows = [json.loads(l) for l in f if l.strip()]
         check("a signed session's wrap is booked as a ledger row",
@@ -582,6 +582,23 @@ def main():
         check("20 concurrent ledger appends = 20 intact rows (flock)",
               len(got) == 20 and sorted(r.get("i") for r in got) == list(range(20)),
               (len(got), got[:3]))
+
+        # ---- 0.5.1: per-agent ledger registry + user-surface purity -------------------
+        out, err, rc = run("_strain_sign.py", None,
+                           ["--agent", "ana", "--session", "sess-A9"],
+                           {"STRAIN_STATE_DIR": wdir})
+        check("0.5.1: a later session resolves its ledger from the registry",
+              rc == 0 and "via registry" in err and "booked" in out,
+              (rc, out, err[:200]))
+        check("0.5.1 USER-SURFACE purity: stdout has no flags/paths/commands",
+              "Strain · Owner: ana" in out and "--" not in out and "/" not in out
+              and ".sh" not in out, out)
+        out, err, rc = run("_strain_sign.py", None,
+                           ["--agent", "cleo", "--session", "sess-A10"],
+                           {"STRAIN_STATE_DIR": wdir})
+        check("0.5.1: the registry never lends across agents (no book for cleo)",
+              rc == 0 and "no ledger" in err and "booked" not in out,
+              (rc, out, err[:200]))
         # the index guard: an unreadable index refuses the rewrite
         bdir = os.path.join(tmp, "badidx")
         os.makedirs(bdir, exist_ok=True)

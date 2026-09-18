@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.1 — 2026-09-18
+
+**The book is remembered, and the chat has two registers.**
+
+- **Per-agent ledger registry** (`<state-dir>/ledgers.json`): signing with
+  `--ledger` once is enough — a later session of the same agent signs with no
+  path at all (resolution: explicit > session state > registry). The registry is
+  a convenience pointer, never identity, never lends across agents, and refuses
+  to rewrite itself when unreadable (same discipline as the index guard).
+- **Two chat registers** for `strain-sign.sh` / `strain-wrap.sh`: stdout is
+  USER-SURFACE — `Strain · Owner: <agent> — signed / wrap marked (…)`, plain
+  words, no flags, no paths (selftest-asserted); stderr is AGENT-DIRECTED detail
+  (paths, resolution basis) for the agent to relay in plain words. Rationale:
+  not every user reads code; command lines belong to agents and docs, not chat.
+- Selftest 95/95 (3 new: registry recall, user-surface purity, no cross-agent
+  lending).
+
 ## 0.5.0 — 2026-09-18
 
 **Signed wraps and the project ledger.** The wrap marker is one file per state dir,

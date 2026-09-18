@@ -67,14 +67,20 @@ def main(argv):
             "type": "wrap", "ts": marker["ts"], "session": sid, "agent": agent,
             "verdict": marker["verdict"], "label": marker["label"],
             "tier": str(st.get("last", "") or ""), "tick": int(st.get("tick", 0) or 0)})
-        booked = (" -- wrap row appended to %s" % ledger) if ok else \
-                 (" -- WARNING: could not append to ledger %s" % ledger)
-    sys.stdout.write("wrap marked (%s)%s%s%s\n"
-                     % (marker["verdict"],
-                        " by " + agent if agent else "",
-                        " -- " + args.label if args.label else "", booked))
-    sys.stderr.write("counters reset at the next session start%s; marker at %s\n"
-                     % (" (same-signature sessions only)" if agent else "", path))
+        booked = " · booked" if ok else " · WARNING: the book could not be written"
+    # CHAT SURFACE, two registers (0.5.1): stdout is USER-SURFACE -- Owner-form,
+    # plain words, no paths; stderr carries the paths for the agent.
+    if agent:
+        sys.stdout.write("Strain · Owner: %s — wrap marked (%s)%s%s\n"
+                         % (agent, marker["verdict"],
+                            " · " + args.label if args.label else "", booked))
+    else:
+        sys.stdout.write("Strain — wrap marked (%s)%s%s\n"
+                         % (marker["verdict"],
+                            " · " + args.label if args.label else "", booked))
+    sys.stderr.write("details: counters reset at the next session start%s · marker %s%s\n"
+                     % (" (same-signature sessions only)" if agent else "", path,
+                        (" · ledger " + ledger) if ledger else ""))
     return 0
 
 
