@@ -153,6 +153,20 @@ A wrap means the work is actually closed: the handoff is written, the tests are 
 the thing is done. Recording that a session felt heavy and declaring it finished are
 different claims — do not let one imply the other.
 
+**Sharing the machine with another agent? Sign first.** The wrap marker is one file per
+state dir, so an unsigned wrap resets every session's counters — including a colleague's
+live one. Early in the session (once you know who you are), declare it:
+
+```
+bash "$CLAUDE_PLUGIN_ROOT/scripts/strain-sign.sh" --agent <your-name> [--ledger ./Log.strain]
+```
+
+Your wrap then carries your signature and resets only your own sessions; other agents
+keep their counters and see one line naming whose marker it is. The optional ledger is
+an append-only account book of the project's sessions (boot-sign and wrap rows) — it
+records the chain, it never carries counters across sessions. Solo on the machine,
+skip all of this: an unsigned wrap behaves exactly as it always did.
+
 Strain says *when* to hand off. It does not do the handing off. Its companion for that is
 **[Throughline](../../../handoff-skill/throughline)**, whose task track is also the
 cleanest source for the behavioural counts above: one main goal anchor, every other task
