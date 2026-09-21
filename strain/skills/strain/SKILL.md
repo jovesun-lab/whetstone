@@ -167,6 +167,15 @@ an append-only account book of the project's sessions (boot-sign and wrap rows) 
 records the chain, it never carries counters across sessions. Solo on the machine,
 skip all of this: an unsigned wrap behaves exactly as it always did.
 
+**If the sign itself fails because your shell cannot reach the state home** (a
+sandboxed or remote session), do not silently stay unsigned — deliver the sign by
+hand: give the user ONE copy-paste line for a plain terminal on the host, with
+everything filled in (the session id as `STRAIN_SESSION=…`, your `--agent` name, the
+ledger path if the project has one — see "Signing from a bare terminal" in the
+README). Put the command alone in its own code block, the steps outside it. The
+`Owner: … — signed` line the user pastes back is your receipt; until it arrives,
+report yourself as measured-but-unsigned, never as signed.
+
 Strain says *when* to hand off. It does not do the handing off. Its companion for that is
 **[Throughline](../../../handoff-skill/throughline)**, whose task track is also the
 cleanest source for the behavioural counts above: one main goal anchor, every other task

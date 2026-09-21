@@ -1,5 +1,18 @@
 # Changelog
 
+## docs — 2026-09-20
+
+**Signing from a bare terminal (delivery by hand).**
+
+- README: new "Signing from a bare terminal" section — a session that cannot
+  reach the state home from its own shell (sandboxed or remote) gets signed by
+  the person at the machine, from any plain terminal; the pasted
+  `Owner: … — signed` line is the receipt.
+- SKILL: the agent-side counterpart — when the sign fails for reachability,
+  hand the user one filled-in copy-paste line instead of silently staying
+  unsigned, and report measured-but-unsigned until the receipt arrives.
+- Docs only; no behaviour change, no version bump.
+
 ## 0.5.1 — 2026-09-18
 
 **The book is remembered, and the chat has two registers.**

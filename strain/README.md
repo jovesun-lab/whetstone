@@ -103,6 +103,25 @@ unchanged. Appends are flock-guarded, so concurrent signers cannot tear a row.
 The path needs saying only **once** (0.5.1): it is remembered per agent
 (`ledgers.json` in the state dir), so later sessions sign with `--agent` alone.
 
+### Signing from a bare terminal
+
+The sign does not have to come from inside the agent's own shell. Some sessions
+cannot reach the state home from where they run — a sandboxed agent, a remote
+shell — and there the honest move is delivery by hand: the agent hands over a
+filled-in command, and the person at the machine runs it in any plain terminal:
+
+```
+STRAIN_SESSION=<session-id> bash <plugin>/scripts/strain-sign.sh --agent ana --ledger /path/to/project/Log.strain
+```
+
+`<plugin>` is wherever the installed copy lives (for Claude Code,
+`~/.claude/plugins/cache/whetstone/strain/<version>`). Run from the project
+folder you can drop `STRAIN_SESSION` — the sign picks the session the index
+knows for that folder, newest first, and the stderr line names which basis it
+used. The one stdout line — `Strain · Owner: ana — signed (…)` — is the
+receipt: paste it back to the agent and the session is signed. Until then the
+session simply stays unsigned: measured, but part of no chain.
+
 ## What it counts
 
 **Context occupancy**, when measurable. Plus behaviour, always:
