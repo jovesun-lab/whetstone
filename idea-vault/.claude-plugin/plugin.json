@@ -1,0 +1,20 @@
+{
+  "name": "idea-vault",
+  "version": "0.1.0",
+  "description": "Cross-project idea capture and review for AI agents. The agent catches ideas mid-conversation (\"we should\", \"next time\", \"/idea\"), confirms before saving, and keeps them in ONE plain-markdown vault with status, priority, checklists and reminder dates. When a session opens it surfaces a short digest of stale and due items — capture without review is a write-only notebook. Pure skill: no hooks, no scripts, no account.",
+  "author": {
+    "name": "arcgram.io"
+  },
+  "keywords": [
+    "idea-capture",
+    "notebook",
+    "backlog",
+    "reminders",
+    "cross-project",
+    "ai-agents",
+    "markdown"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/jovesun-lab/whetstone/tree/main/idea-vault",
+  "repository": "https://github.com/jovesun-lab/whetstone"
+}
