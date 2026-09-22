@@ -62,6 +62,43 @@ from the model id (`fable` and `[1m]` variants → 1M; anything else → 200k) a
 a wrong number delivered with full confidence, which is exactly what this tool exists not
 to do.
 
+## When strain cannot read your host (0.6.0)
+
+The first cross-model field report made a gap plain: a session on a non-Claude host had
+its numbers on screen — the host reported a 258,400-token runtime window and per-turn
+usage — and strain still ran in `inferred` mode, because the transcript reader knows one
+host's shape. "The host exposes nothing" and "the host exposes something strain cannot
+parse" used to land in the same coarse mode. The fix is a front door, not a pile of
+per-host parsers:
+
+**Denominator** — record your environment's window once, sourced and typed:
+
+```
+bash "$CLAUDE_PLUGIN_ROOT/scripts/strain-calibrate.sh" --product "Codex CLI" \
+     --window 258400 --basis runtime --source "host runtime log"
+```
+
+`--basis` is required and is the field that keeps the record honest: `nominal` is the
+published capacity, `runtime` is what the host reports live (often smaller — e.g. a
+post-compaction window). A runtime reading mistaken for the model's nominal size
+corrupts every percentage after it. The record expires (default 30 days) and a stale
+one falls back loudly — it never silently keeps ruling.
+
+**Numerator** — when the host shows its usage, hand it over at recording time:
+
+```
+bash "$CLAUDE_PLUGIN_ROOT/scripts/strain-level.sh" Mid --ctx-used 65749 --ctx-source "host runtime log"
+```
+
+The readout then says `fill 25.4% — agent-fed: 65,749 of 258,400 tokens (calibrated …)`.
+`agent-fed` is its own mode, printed every time: a fed number is honest input with a
+named source — it is never dressed up as a measurement strain made itself.
+
+**No hooks on your host?** Then ticks will not fire on their own. Adopt the manual
+cadence the skill describes: run the strain check by hand every ~10 tool calls or at
+every milestone, and feed the reading if your host shows one. An instrument nobody
+polls is an instrument that stays quiet — on hook-less hosts the polling is yours.
+
 ## One session, one reading
 
 Strain measures **a single conversation**, keyed by its session id. Two agents on the same
@@ -175,6 +212,9 @@ All of these live in the plugin folder, so the agent runs them as
 | Command | What it does |
 |---|---|
 | `strain-level.sh <tier>` | record the tier for this session |
+| `strain-level.sh <tier> --ctx-used <n> --ctx-source "<where>"` | record a tier AND feed the host's own usage reading (agent-fed fill, source named) |
+| `strain-calibrate.sh --product <p> --window <n> --basis nominal\|runtime --source "<where>"` | record this environment's window — sourced, typed, expiring; becomes the fill denominator |
+| `strain-calibrate.sh --show` | print the calibration record and whether it is still valid |
 | `strain-level.sh --get` | print the current tier |
 | `strain-level.sh --show` | the whole state, including the context reading and which file it came from |
 | `strain-signal.sh <kind> --caught\|--escaped` | record a hard signal; escaped ones floor the tier, caught ones feed the pattern note |

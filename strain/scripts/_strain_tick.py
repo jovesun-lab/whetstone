@@ -260,6 +260,10 @@ def main():
 
     # Context is re-read every tick (a bounded tail scan); the baseline is read once and
     # then carried, because what the boot cost cannot change later in the session.
+    # 0.6.0: a valid calibration record (strain-calibrate.sh) sets the denominator
+    # before the engine measures -- env override still wins inside apply_calibration.
+    from _strain_common import apply_calibration
+    apply_calibration(sdir)
     prev_ctx = st.get("ctx") if isinstance(st.get("ctx"), dict) else {}
     ctx = ctxmod.measure(payload, sid, known_baseline=prev_ctx.get("baseline"))
     st["ctx"] = ctx

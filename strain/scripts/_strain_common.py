@@ -341,3 +341,61 @@ def ledger_rows(path):
     except Exception:
         pass
     return rows
+
+
+# ---- 0.6.0: the context FEED DOOR -----------------------------------------------------
+# First cross-model field report (a gpt-6 / Codex-family session, 2026-09-22): the host
+# REPORTED its runtime window and per-turn usage, and strain could parse none of it --
+# the transcript reader knows one host's shape. "The host does not expose a reading" and
+# "the host exposes one strain cannot read" landed in the same coarse mode. The fix is a
+# front door, not more adapters: the AGENT can usually see its host's own numbers, so let
+# it hand them over -- with provenance, never dressed up as a measurement strain made.
+
+def calibration_path(sdir):
+    return os.path.join(sdir, "calibration.json")
+
+
+def calibration_valid(cal):
+    """(ok, why). A capacity nobody sourced is a stale ruler waiting to happen: the
+    record must carry a positive window, a source, a fresh checkedAt (default 30 days,
+    STRAIN_CALIBRATION_MAX_DAYS), and say which KIND of number it is -- `nominal` (the
+    published capacity) or `runtime` (what the host reports live, e.g. a post-compaction
+    window). Mixing the two is how a runtime reading gets mistaken for the model's size."""
+    if not isinstance(cal, dict) or not cal:
+        return False, "no calibration record"
+    try:
+        w = int(cal.get("window") or 0)
+    except Exception:
+        w = 0
+    if w <= 0:
+        return False, "window missing or invalid"
+    if not str(cal.get("source") or "").strip():
+        return False, "record carries no source"
+    basis = str(cal.get("basis") or "")
+    if basis not in ("nominal", "runtime"):
+        return False, "basis must be 'nominal' or 'runtime'"
+    ca = str(cal.get("checkedAt") or "")[:10]
+    try:
+        age = (time.time() - time.mktime(time.strptime(ca, "%Y-%m-%d"))) / 86400.0
+    except Exception:
+        return False, "checkedAt unreadable"
+    max_days = int(os.environ.get("STRAIN_CALIBRATION_MAX_DAYS", "30"))
+    if age > max_days:
+        return False, "stale: checked %s (%dd > %dd)" % (ca, int(age), max_days)
+    return True, "calibrated %s (%s, %s window %d)" % (ca, cal.get("product") or "?",
+                                                       basis, w)
+
+
+def apply_calibration(sdir):
+    """Resolve the fill denominator: an explicit STRAIN_CONTEXT_LIMIT env wins; else a
+    VALID calibration record is exported into STRAIN_CONTEXT_LIMIT for the engine; else
+    nothing -- the engine keeps its own precedence (model hint, then the conservative
+    default). Returns (mode, why): mode in {"env", "calibrated", "uncalibrated"}."""
+    if os.environ.get("STRAIN_CONTEXT_LIMIT"):
+        return "env", "STRAIN_CONTEXT_LIMIT override"
+    cal = load(calibration_path(sdir))
+    ok, why = calibration_valid(cal)
+    if ok:
+        os.environ["STRAIN_CONTEXT_LIMIT"] = str(int(cal["window"]))
+        return "calibrated", why
+    return "uncalibrated", why

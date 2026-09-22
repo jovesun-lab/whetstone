@@ -619,6 +619,65 @@ def main():
               "/home/" not in raw, raw[:200])
         check("hooks.json goes through the plugin root", "CLAUDE_PLUGIN_ROOT" in raw)
 
+        # ---- 0.6.0: the FEED DOOR (first cross-model field report, 2026-09-22) --------
+        # A host the transcript reader cannot parse may still SHOW its numbers; the
+        # agent hands them over -- sourced, typed, never dressed up as measured.
+        dcal = os.path.join(tmp, "feed")
+        os.makedirs(dcal, exist_ok=True)
+        out, err, rc = run("_strain_calibrate.py", None,
+                           ["--state-dir", dcal, "--product", "Codex CLI",
+                            "--window", "258400", "--basis", "runtime",
+                            "--source", "host runtime log"])
+        check("0.6.0: calibrate writes a sourced, typed, dated record",
+              rc == 0 and "runtime window" in out and "258,400" in out, (rc, out))
+        out, err, rc = run("_strain_calibrate.py", None,
+                           ["--state-dir", dcal, "--show"])
+        check("0.6.0: --show reads the record back as valid",
+              rc == 0 and '"valid": true' in out and '"basis": "runtime"' in out,
+              out[:300])
+        _, err, rc = run("_strain_calibrate.py", None,
+                         ["--state-dir", dcal, "--product", "X", "--window", "100",
+                          "--basis", "nominal"])
+        check("0.6.0: an unsourced capacity is REFUSED (stale ruler doctrine)",
+              rc == 2 and "source" in err, (rc, err[:200]))
+        _, err, rc = run("_strain_calibrate.py", None,
+                         ["--state-dir", dcal, "--product", "X", "--window", "100",
+                          "--source", "s"])
+        check("0.6.0: a record without nominal/runtime basis is REFUSED",
+              rc == 2 and "basis" in err, (rc, err[:200]))
+        # denominator flows into a tick with no env override
+        tick(dcal, "sess-feed1", n=1)
+        stF = state_of(dcal, "sess-feed1")
+        check("0.6.0: a valid calibration record sets the tick denominator",
+              (stF.get("ctx") or {}).get("limit") == 258400, stF.get("ctx"))
+        out, _, rc = tick(dcal, "sess-feed1", n=1,
+                          extra_env={"STRAIN_CONTEXT_LIMIT": "999000"})
+        check("0.6.0: an explicit env override still beats the calibration record",
+              (state_of(dcal, "sess-feed1").get("ctx") or {}).get("limit") == 999000,
+              state_of(dcal, "sess-feed1").get("ctx"))
+        # the fed numerator, through the recorder
+        out, err, rc = run("_strain_level.py", None,
+                           ["--state-dir", dcal, "--session", "sess-feed1",
+                            "--ctx-used", "65749", "--ctx-source", "host runtime log"])
+        stF = state_of(dcal, "sess-feed1")
+        check("0.6.0: level --ctx-used computes fill against the calibrated window",
+              rc == 0 and "fill 25.4%" in out and "agent-fed" in out
+              and (stF.get("ctx") or {}).get("mode") == "agent-fed"
+              and (stF.get("ctx") or {}).get("source") == "host runtime log",
+              (rc, out, stF.get("ctx")))
+        _, err, rc = run("_strain_level.py", None,
+                         ["--state-dir", dcal, "--session", "sess-feed1",
+                          "--ctx-used", "1000"])
+        check("0.6.0: a fed reading WITHOUT a source is REFUSED",
+              rc == 2 and "ctx-source" in err, (rc, err[:200]))
+        out, err, rc = run("_strain_level.py", None,
+                           ["Mid", "--state-dir", dcal, "--session", "sess-feed1",
+                            "--ctx-used", "70000", "--ctx-source", "host runtime log"])
+        stF = state_of(dcal, "sess-feed1")
+        check("0.6.0: feeding and recording a tier in one call does both",
+              rc == 0 and stF.get("last") == "Mid"
+              and (stF.get("ctx") or {}).get("tokens") == 70000, (rc, stF))
+
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

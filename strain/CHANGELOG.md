@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.6.0 — 2026-09-22
+
+**The feed door: strain on hosts it cannot parse.**
+
+Prompted by the first cross-model field report (a Codex-family session): the host
+showed a 258,400-token runtime window and per-turn usage on screen, and strain still
+ran blind — the transcript reader knows one host's shape, and "exposes nothing" vs
+"exposes something unparseable" landed in the same coarse mode.
+
+- **`strain-calibrate.sh`** (new): record the environment's window — `--source`
+  required (an unsourced capacity is a stale ruler waiting to happen), `--basis
+  nominal|runtime` required (a runtime reading mistaken for nominal capacity corrupts
+  every percentage after it), dated and expiring (default 30 days, falls back loudly).
+  A valid record becomes the fill denominator for ticks and fed readings;
+  `STRAIN_CONTEXT_LIMIT` still wins.
+- **`strain-level.sh --ctx-used <n> --ctx-source "<where>"`**: feed the host's own
+  usage at recording time. The readout and the stored state carry mode `agent-fed`
+  and the named source — honest input, never dressed up as a measurement strain made.
+- README: "When strain cannot read your host" section + manual cadence for hook-less
+  hosts; SKILL: honest-limits amendment making the agent the adapter, with wording
+  that forbids reporting fed numbers as measured.
+- Selftest 95 → 104 (record write/read-back, unsourced/untyped refusals, denominator
+  precedence env > calibration > hint, fed fill arithmetic, source-required refusal,
+  feed+tier in one call).
+- Riding this version to installed users: the 2026-09-20 docs commit (signing from a
+  bare terminal — README section + the skill's hand-delivery discipline), which was
+  pushed untagged and reaches plugin installs only with a version bump.
+
 ## docs — 2026-09-20
 
 **Signing from a bare terminal (delivery by hand).**

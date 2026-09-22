@@ -185,7 +185,15 @@ tagged. If you use both, strain reads what throughline already records.
 
 - **Hooks are per-host.** Where they exist, the check fires whether or not the agent
   remembers. Where they do not, it is a discipline the agent has to keep — weaker, and
-  worth naming out loud rather than papering over.
+  worth naming out loud rather than papering over. On a hook-less host, adopt the
+  manual cadence yourself: run the check every ~10 tool calls or at each milestone.
+- **Context auto-parsing knows one host's transcript shape** (Claude Code's). On other
+  hosts strain runs in counted mode even when the host shows its numbers on screen —
+  in that case YOU are the adapter: record the window once
+  (`strain-calibrate.sh --window <n> --basis nominal|runtime --source "<where>"`) and
+  feed the usage at recording time (`strain-level.sh <tier> --ctx-used <n>
+  --ctx-source "<where>"`). A fed reading is labelled agent-fed with its source —
+  never report it as something strain measured itself.
 - **Thresholds are guesses** until you retune them. They came from one agent-and-user pair
   over a long run; yours will differ.
 - **The soft signals are judgement calls.** Counting them honestly is the whole job; a

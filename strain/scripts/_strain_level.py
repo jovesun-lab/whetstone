@@ -22,7 +22,7 @@ import argparse, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (TIERS, state_dir, session_path, load, save, blank,
-                            now_iso, resolve_sid)
+                            now_iso, resolve_sid, apply_calibration)
 import _strain_context as ctxmod
 
 
@@ -34,12 +34,48 @@ def main(argv):
     ap.add_argument("--get", action="store_true")
     ap.add_argument("--show", action="store_true")
     ap.add_argument("--quiet", action="store_true")
+    # 0.6.0 FEED DOOR: on a host strain cannot parse, the agent hands over the host's
+    # OWN usage reading. Provenance rides along and the mode says "agent-fed" -- a fed
+    # number is honest input, never dressed up as a measurement strain made itself.
+    ap.add_argument("--ctx-used", type=int, default=None)
+    ap.add_argument("--ctx-source", default=None)
     args, _ = ap.parse_known_args(argv)
 
     sdir = state_dir(args.state_dir)
     sid, how = resolve_sid(sdir, args.session)
     path = session_path(sdir, sid)
     st = load(path)
+
+    if args.ctx_used is not None:
+        if args.ctx_used <= 0:
+            sys.stderr.write("--ctx-used must be a positive token count\n")
+            return 2
+        if not (args.ctx_source or "").strip():
+            sys.stderr.write("--ctx-source is required with --ctx-used: say where the "
+                             "number was read (e.g. 'host runtime log') -- an unsourced "
+                             "reading cannot be trusted later\n")
+            return 2
+        mode, why = apply_calibration(sdir)
+        lim = ctxmod.limit(str(st.get("model") or ""))
+        pct = round(100.0 * args.ctx_used / lim, 1)
+        if not st:
+            st = blank(sid)
+        st["ctx"] = {"mode": "agent-fed", "tokens": int(args.ctx_used), "limit": lim,
+                     "pct": pct, "source": args.ctx_source.strip(),
+                     "fedAt": now_iso(),
+                     "limit_basis": why if mode != "uncalibrated"
+                     else "engine default/model hint (uncalibrated)"}
+        st["updated"] = now_iso()
+        if not save(path, st):
+            sys.stderr.write("could not write state to %s\n" % path)
+            return 1
+        sys.stdout.write("fill %.1f%% — agent-fed: %s of %s tokens (%s)\n"
+                         % (pct, "{:,}".format(int(args.ctx_used)),
+                            "{:,}".format(int(lim)), st["ctx"]["limit_basis"]))
+        sys.stderr.write("source: %s · session %s (resolved by %s) -> %s\n"
+                         % (args.ctx_source.strip(), sid or "unknown", how, path))
+        if args.tier is None:
+            return 0
 
     if args.show:
         view = dict(st)
