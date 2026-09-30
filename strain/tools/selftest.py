@@ -154,13 +154,15 @@ def main():
         run("_strain_wrap.py", None, ["--label", "phase one", "--session", "sess-E"],
             {"STRAIN_STATE_DIR": sdir})
         start(sdir, "sess-E", source="resume")
-        check("wrap marker resets", state_of(sdir, "sess-E").get("tick") == 0,
-              state_of(sdir, "sess-E"))
+        check("0.7.0 B2 (was: wrap marker resets): a wrap resets nothing, it records the wrap",
+              state_of(sdir, "sess-E").get("tick") == 4
+              and bool(state_of(sdir, "sess-E").get("wrappedAt")), state_of(sdir, "sess-E"))
         for _ in range(2):
             tick(sdir, "sess-E")
         start(sdir, "sess-E", source="resume")
-        check("a wrap resets once, not forever",
-              state_of(sdir, "sess-E").get("tick") == 2, state_of(sdir, "sess-E"))
+        check("0.7.0 B2 (was: a wrap resets once): work after the wrap keeps counting",
+              state_of(sdir, "sess-E").get("tick") == 6
+              and state_of(sdir, "sess-E").get("wrapTick") == 4, state_of(sdir, "sess-E"))
 
         # ---- compaction is escalation, one way ---------------------------------------
         sdir = os.path.join(tmp, "s5")
@@ -168,11 +170,13 @@ def main():
         start(sdir, "sess-F", source="compact")
         st = state_of(sdir, "sess-F")
         check("compaction counted", st.get("compactions") == 1, st)
-        check("compaction floors the tier", st.get("last") == "High", st)
+        check("0.7.0 B1 (was: compaction floors the tier): stated, never a floor",
+              st.get("last") == "Healthy", st)
         check("compaction preserves the count", st.get("tick") == 1, st)
         start(sdir, "sess-F", source="compact")
         st = state_of(sdir, "sess-F")
-        check("second compaction escalates", st.get("last") == "Warning", st)
+        check("0.7.0 B1 (was: second compaction escalates): counted, still no floor",
+              st.get("last") == "Healthy" and st.get("compactions") == 2, st)
         run("_strain_level.py", None, ["Healthy", "--session", "sess-F"],
             {"STRAIN_STATE_DIR": sdir})
         start(sdir, "sess-F", source="resume")
@@ -340,8 +344,8 @@ def main():
         check("v3-C: fill 46 + 2 escaped = Healthy (both lines quiet)",
               t_ == "Healthy", (t_, b_))
         t_, b_, d_ = pt(None, mode="inferred")
-        check("v3-D: unmeasured mode = Line A abstains, never 'Healthy (fill 0%)'",
-              t_ == "Healthy" and "abstains" in b_ and "fill 0" not in b_, (t_, b_))
+        check("0.7.0 A2 (was v3-D): unmeasured mode = Line A abstains -> UNMEASURED, never Healthy",
+              t_ == "UNMEASURED" and "abstains" in b_ and "fill 0" not in b_, (t_, b_))
         t_, b_, d_ = pt(80.0, env={"STRAIN_WRAP_BUDGET": "12"})
         check("v3-E: a raised WRAP_BUDGET that inverts the ladder shouts CONFIG INVALID",
               "CONFIG INVALID" in b_, b_)
@@ -355,8 +359,8 @@ def main():
         check("v3-H: inverted ladder + fill 90 -> defaults in force -> Danger",
               t_ == "Danger" and "CONFIG INVALID" in b_, (t_, b_))
         t_, b_, d_ = pt(-5.0)
-        check("v3-I: pct -5 -> Line A abstains loudly, never 'Healthy (fill -5%)'",
-              t_ == "Healthy" and "impossible" in b_, (t_, b_))
+        check("0.7.0 A2 (was v3-I): pct -5 -> Line A abstains loudly -> UNMEASURED",
+              t_ == "UNMEASURED" and "impossible" in b_, (t_, b_))
 
         # ---- robustness ---------------------------------------------------------------
         sdir = os.path.join(tmp, "s7")
@@ -490,16 +494,17 @@ def main():
         # ---- calibration is printed at boot, and a wrap reset clears signals -----------
         cdir = os.path.join(tmp, "s11")
         out, _, _ = start(cdir, "sess-S")
-        check("boot prints the calibration line", "strain calibrated:" in out
-              and "40/60/75/85" in out, out[:400])
+        check("0.7.0 A5/A6 (was: boot prints the 40/60/75/85 bands): boot prints the tick's caps",
+              "strain calibration:" in out and "50/60/70/74" in out
+              and "40/60/75/85" not in out, out[:400])
         run("_strain_signal.py", None, ["regression", "--escaped", "--session", "sess-S"],
             {"STRAIN_STATE_DIR": cdir})
         run("_strain_wrap.py", None, ["--label", "done", "--session", "sess-S"],
             {"STRAIN_STATE_DIR": cdir})
         start(cdir, "sess-S", source="resume")
         st = state_of(cdir, "sess-S")
-        check("a wrap reset clears the signal ledger",
-              st.get("signals") == [] and st.get("last") == "Healthy", st)
+        check("0.7.0 B2 (was: a wrap reset clears the signal ledger): a wrap keeps the signals",
+              len(st.get("signals") or []) == 1, st)
 
         # ---- 0.5.0: signed wraps + the project ledger ----------------------------------
         # The shipped failure this section locks: two agents, one state dir -- one
@@ -531,27 +536,24 @@ def main():
                            ["--label", "ana done", "--session", "sess-A1"],
                            {"STRAIN_STATE_DIR": wdir})
         check("wrap inherits the wrapping session's signature (no --agent needed)",
-              rc == 0 and "Strain · Owner: ana — wrap marked" in out, (rc, out))
+              rc == 0 and "Strain · Owner: ana — wrapped" in out, (rc, out))
         with open(book) as f:
             rows = [json.loads(l) for l in f if l.strip()]
         check("a signed session's wrap is booked as a ledger row",
               len(rows) == 2 and rows[1].get("type") == "wrap"
               and rows[1].get("agent") == "ana"
-              and rows[1].get("verdict") == "CLEAN", rows)
+              and rows[1].get("verdict") == "WRAPPED", rows)
         out, _, _ = start(wdir, "sess-B1", source="resume", cwd="/tmp/proj-b")
         stB = state_of(wdir, "sess-B1")
-        check("ana's signed marker does NOT reset bo's live counters",
-              stB.get("tick") == 2 and stB.get("consumed_wrap", "") == ""
-              and "signed by ana" in out and "keeps its counters" in out,
-              (stB, out[:300]))
+        check("0.7.0 B2 (was: ana's signed marker does NOT reset bo): ana's wrap leaves bo alone",
+              stB.get("tick") == 2, (stB, out[:300]))
         out, _, _ = start(wdir, "sess-B1", source="resume", cwd="/tmp/proj-b")
-        check("the foreign-marker line prints once per marker, not per turn",
-              "signed by ana" not in out, out[:300])
+        check("0.7.0 B2 (was: foreign-marker line once): no wrap line reaches another session",
+              "signed by ana" not in out and "wrap" not in out.lower(), out[:300])
         out, _, _ = start(wdir, "sess-A1", source="resume", cwd="/tmp/proj-a")
         stA = state_of(wdir, "sess-A1")
-        check("the same signature still consumes and resets",
-              stA.get("tick") == 0 and bool(stA.get("consumed_wrap"))
-              and "signed ana" in out, (stA, out[:300]))
+        check("0.7.0 B2 (was: same signature resets): the wrapping session keeps its counters",
+              stA.get("tick") == 1 and bool(stA.get("wrappedAt")), (stA, out[:300]))
         check("the reset keeps the signature and the ledger binding",
               stA.get("agent") == "ana" and stA.get("ledger") == book, stA)
         # unsigned marker = pre-0.5.0 behaviour, exactly (signing is opt-in)
@@ -559,16 +561,15 @@ def main():
         run("_strain_wrap.py", None, ["--session", "sess-C1"],
             {"STRAIN_STATE_DIR": wdir})
         start(wdir, "sess-B1", source="resume", cwd="/tmp/proj-b")
-        check("an unsigned marker still resets everyone (backward compatible)",
-              state_of(wdir, "sess-B1").get("tick") == 0, state_of(wdir, "sess-B1"))
+        check("0.7.0 B2 (was: an unsigned marker resets everyone): an unsigned wrap touches no one else",
+              state_of(wdir, "sess-B1").get("tick") == 2, state_of(wdir, "sess-B1"))
         # an unsigned session facing a signed marker is told how to join in
         tick(wdir, "sess-D1", cwd="/tmp/proj-d")
         run("_strain_wrap.py", None, ["--agent", "ana", "--session", "sess-A1"],
             {"STRAIN_STATE_DIR": wdir})
         out, _, _ = start(wdir, "sess-D1", source="resume", cwd="/tmp/proj-d")
-        check("an unsigned session keeps counters against a signed marker + gets the hint",
-              state_of(wdir, "sess-D1").get("tick") == 1
-              and "strain-sign.sh" in out, (state_of(wdir, "sess-D1"), out[:300]))
+        check("0.7.0 B2 (was: unsigned session vs signed marker + hint): its counters stand",
+              state_of(wdir, "sess-D1").get("tick") == 1, (state_of(wdir, "sess-D1"), out[:300]))
         # the ledger survives concurrent writers -- every row lands whole
         import threading
         sys.path.insert(0, SCRIPTS)
@@ -677,6 +678,167 @@ def main():
         check("0.6.0: feeding and recording a tier in one call does both",
               rc == 0 and stF.get("last") == "Mid"
               and (stF.get("ctx") or {}).get("tokens") == 70000, (rc, stF))
+
+        # ---- 0.7.0 (the internal fixes that apply, ported) ------------------------------
+        import re as _re
+        LVL = os.path.join(SCRIPTS, "strain-level.sh")
+        SIG = os.path.join(SCRIPTS, "strain-signal.sh")
+        # A1 -- the tick's record command runs from a plain shell (no $CLAUDE_PLUGIN_ROOT)
+        xdir = os.path.join(tmp, "s070")
+        for _ in range(10):
+            out, _, _ = tick(xdir, "sess-X1")
+        check("0.7.0 A1: no $CLAUDE_PLUGIN_ROOT in the tick text",
+              "PROPOSED TIER" in out and "CLAUDE_PLUGIN_ROOT" not in out, out[:300])
+        m = _re.search(r"record it: `([^`]+)`", out)
+        cmd = m.group(1) if m else ""
+        check("0.7.0 A1: the record command names this session, its state dir and the running copy",
+              "STRAIN_SESSION=sess-X1" in cmd and LVL in cmd and xdir in cmd, cmd)
+        check("0.7.0 A1: the signal command is runnable too", SIG in out, out[-900:])
+        if cmd:
+            plain = {k: v for k, v in os.environ.items()
+                     if k not in ("STRAIN_STATE_DIR", "STRAIN_SESSION")}
+            subprocess.run(["bash", "-c", cmd.replace("<Healthy|Mid|High|Warning|Danger>", "Mid")],
+                           env=plain, capture_output=True, text=True, cwd=tmp)
+        check("0.7.0 A1: run from a plain shell, the printed command records into this session",
+              state_of(xdir, "sess-X1").get("last") == "Mid", state_of(xdir, "sess-X1"))
+        # A2 -- nothing measured and nothing else to say -> UNMEASURED, with the feed door named
+        check("0.7.0 A2: an unmeasured tick proposes UNMEASURED and names the feed",
+              "PROPOSED TIER: UNMEASURED" in out and "--ctx-used" in out, out[:500])
+        # A6 -- wording
+        check("0.7.0 A6: the header names the interval, not a count",
+              "host-fired every 10 tool calls" in out and "since the last check" not in out,
+              out[:200])
+        check("0.7.0 A6: the bracket reads 'strain calibration:'",
+              "strain calibration:" in out and "strain calibrated:" not in out, out[-400:])
+        # A5 -- the boot line uses the tick's caps (one ruler per session)
+        out, _, _ = start(xdir, "sess-X2")
+        check("0.7.0 A5: boot line = tick caps (50/60/70/74), never the legacy bands",
+              "fill caps 50/60/70/74" in out and "fill bands" not in out, out[:400])
+
+        # A3 -- a fed reading is scored, kept, grows only by bytes after it, voided by compaction
+        fdir = os.path.join(tmp, "s070f")
+        ftp = os.path.join(tmp, "fed-raw.jsonl")
+        with open(ftp, "w") as f:
+            f.write("{}\n" * 1000)                       # 3000 bytes, no usage rows
+        L = {"STRAIN_CONTEXT_LIMIT": "1000000"}
+        tick(fdir, "sess-F7", n=1, transcript=ftp, extra_env=L)
+        run("_strain_level.py", None, ["--session", "sess-F7", "--ctx-used", "650000",
+                                        "--ctx-source", "host runtime log"],
+            dict(L, STRAIN_STATE_DIR=fdir))
+        out, _, _ = tick(fdir, "sess-F7", n=1, transcript=ftp, extra_env=L)
+        check("0.7.0 A3: the next tick SCORES the fed value (65% -> High, not abstained)",
+              "PROPOSED TIER: High" in out, out[:400])
+        check("0.7.0 A3: a byte estimate does not overwrite the fed value",
+              state_of(fdir, "sess-F7").get("ctx", {}).get("mode") == "agent-fed",
+              state_of(fdir, "sess-F7").get("ctx"))
+        with open(ftp, "a") as f:
+            f.write("x" * 40000)
+        tick(fdir, "sess-F7", n=1, transcript=ftp, extra_env=L)
+        fctx = state_of(fdir, "sess-F7").get("ctx", {})
+        check("0.7.0 A3: only bytes appended AFTER the feed are added (40000 bytes -> +10000)",
+              fctx.get("mode") == "agent-fed" and fctx.get("tokens") == 660000, fctx)
+        mtp = os.path.join(tmp, "fed-measured.jsonl")
+        make_transcript(mtp, [(2, 300000, 0)], model="claude-opus-5")
+        tick(fdir, "sess-F7", n=1, transcript=mtp, extra_env=L)
+        check("0.7.0 A3: a real measured reading replaces the fed value",
+              state_of(fdir, "sess-F7").get("ctx", {}).get("mode") == "measured",
+              state_of(fdir, "sess-F7").get("ctx"))
+        tick(fdir, "sess-F8", n=1, transcript=ftp, extra_env=L)
+        run("_strain_level.py", None, ["--session", "sess-F8", "--ctx-used", "650000",
+                                        "--ctx-source", "host runtime log"],
+            dict(L, STRAIN_STATE_DIR=fdir))
+        start(fdir, "sess-F8", source="compact")
+        out, _, _ = tick(fdir, "sess-F8", n=1, transcript=ftp, extra_env=L)
+        check("0.7.0 A3: a compaction after the feed voids it -> UNMEASURED",
+              "PROPOSED TIER: UNMEASURED" in out, out[:400])
+
+        # A4 -- parallel hooks never wipe the session file
+        kdir = os.path.join(tmp, "s070k")
+        tick(kdir, "sess-K", n=1000)
+        run("_strain_signal.py", None, ["regression", "--escaped", "--session", "sess-K"],
+            {"STRAIN_STATE_DIR": kdir})
+        wiped, total = 0, 1
+        for rnd in range(3):
+            ps = [subprocess.Popen([sys.executable, os.path.join(SCRIPTS, "_strain_tick.py"),
+                                    "--n", "1000"], stdin=subprocess.PIPE,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   env=dict(os.environ, STRAIN_STATE_DIR=kdir), text=True)
+                  for _ in range(24)]
+            for pr in ps:
+                pr.stdin.write(json.dumps({"session_id": "sess-K", "cwd": "/tmp/proj",
+                                           "hook_event_name": "PostToolUse"}))
+                pr.stdin.close()
+            for pr in ps:
+                pr.wait()
+            total += 24
+            if len(state_of(kdir, "sess-K").get("signals") or []) != 1:
+                wiped += 1
+        check("0.7.0 A4: 72 parallel ticks keep the escaped signal (3 rounds)", wiped == 0,
+              state_of(kdir, "sess-K"))
+        check("0.7.0 A4: ... and lose no count", state_of(kdir, "sess-K").get("tick") == total,
+              (state_of(kdir, "sess-K").get("tick"), total))
+
+        # A7 -- a ledger that cannot be written says why
+        out, err, rc = run("_strain_sign.py", None,
+                           ["--agent", "zed", "--session", "sess-X1", "--ledger",
+                            os.path.join(tmp, "no-such-folder", "Log.strain")],
+                           {"STRAIN_STATE_DIR": xdir})
+        check("0.7.0 A7: a failed ledger append names its reason",
+              "does not exist" in err, (rc, out, err))
+
+        # B2 -- a wrap writes no marker; --status shows this session's wrap
+        bdir = os.path.join(tmp, "s070b")
+        for _ in range(3):
+            tick(bdir, "sess-W")
+        run("_strain_wrap.py", None, ["--label", "phase one", "--session", "sess-W"],
+            {"STRAIN_STATE_DIR": bdir})
+        check("0.7.0 B2: no shared wrap-marker.json is written",
+              not os.path.exists(os.path.join(bdir, "wrap-marker.json")), os.listdir(bdir))
+        out, _, rc = run("_strain_wrap.py", None, ["--status", "--session", "sess-W"],
+                         {"STRAIN_STATE_DIR": bdir})
+        check("0.7.0 B2: --status shows this session's wrap",
+              rc == 0 and '"wrapTick": 3' in out, out)
+        out, _, _ = tick(bdir, "sess-W", n=1)
+        check("0.7.0 B2: the tick says when this session wrapped and what ran since",
+              "wrapped at" in out and "1 call since the wrap" in out, out[-700:])
+
+        # B3 -- the sign reports the previous session of the same agent
+        pdir = os.path.join(tmp, "s070p")
+        pbook = os.path.join(tmp, "s070p-proj", "Log.strain")
+        os.makedirs(os.path.dirname(pbook), exist_ok=True)
+        out, _, _ = run("_strain_sign.py", None, ["--agent", "ana", "--session", "sess-P1",
+                                                   "--ledger", pbook], {"STRAIN_STATE_DIR": pdir})
+        check("0.7.0 B3: the first session of an agent says so",
+              "no earlier session" in out, out)
+        for _ in range(3):
+            tick(pdir, "sess-P1")
+        run("_strain_wrap.py", None, ["--session", "sess-P1"], {"STRAIN_STATE_DIR": pdir})
+        out, _, _ = run("_strain_sign.py", None, ["--agent", "ana", "--session", "sess-P2",
+                                                   "--ledger", pbook], {"STRAIN_STATE_DIR": pdir})
+        check("0.7.0 B3: the next session's sign reports the previous one",
+              "previous session (ana · sess-P1)" in out and "3 tool calls" in out
+              and "wrapped" in out, out)
+        out, _, _ = run("_strain_sign.py", None, ["--agent", "ana", "--session", "sess-P2"],
+                        {"STRAIN_STATE_DIR": pdir})
+        check("0.7.0 B3: a re-sign of the same session does not repeat the report",
+              "previous session" not in out, out)
+
+        # B4 -- the engine names cloud Cowork and the hostloop shape
+        ctxm = tickmod.ctxmod
+        saved = os.environ.get("CLAUDE_CODE_ENTRYPOINT")
+        os.environ["CLAUDE_CODE_ENTRYPOINT"] = "remote_cowork"
+        try:
+            got = ctxm.detect_substrate(
+                {"transcript_path": "/root/.claude/projects/-home-claude/x.jsonl"}, "/home/claude")
+        finally:
+            if saved is None:
+                os.environ.pop("CLAUDE_CODE_ENTRYPOINT", None)
+            else:
+                os.environ["CLAUDE_CODE_ENTRYPOINT"] = saved
+        check("0.7.0 B4: CLAUDE_CODE_ENTRYPOINT=remote_cowork -> cowork-cloud", got == "cowork-cloud", got)
+        got = ctxm.detect_substrate({"transcript_path": "/x/claude-hostloop-plugins/ab12/projects/"
+                                                        "session/s.jsonl"}, "/private/var/empty")
+        check("0.7.0 B4: the hostloop transcript shape -> cowork", got == "cowork", got)
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

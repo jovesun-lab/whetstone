@@ -22,11 +22,11 @@ import argparse, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (TIERS, state_dir, session_path, load, save, blank,
-                            now_iso, resolve_sid, apply_calibration)
+                            now_iso, resolve_sid, apply_calibration, state_lock)
 import _strain_context as ctxmod
 
 
-def main(argv):
+def _main(argv, lock_holder):
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("tier", nargs="?", default=None)
     ap.add_argument("--state-dir", default=None)
@@ -44,6 +44,9 @@ def main(argv):
     sdir = state_dir(args.state_dir)
     sid, how = resolve_sid(sdir, args.session)
     path = session_path(sdir, sid)
+    lock = state_lock(path)
+    lock.__enter__()                   # 0.7.0: one read-modify-write at a time
+    lock_holder.append(lock)
     st = load(path)
 
     if args.ctx_used is not None:
@@ -60,8 +63,22 @@ def main(argv):
         pct = round(100.0 * args.ctx_used / lim, 1)
         if not st:
             st = blank(sid)
+        # 0.7.0: the feed is an ANCHOR the tick scores and keeps -- it records what
+        # would void it (a later compaction, a model switch) and the transcript size
+        # now, so only bytes appended after the feed are ever added.
+        prev = st.get("ctx") if isinstance(st.get("ctx"), dict) else {}
+        tp = str(prev.get("transcript") or "")
+        try:
+            anchor = os.path.getsize(tp) if tp else None
+        except Exception:
+            anchor = None
         st["ctx"] = {"mode": "agent-fed", "tokens": int(args.ctx_used), "limit": lim,
                      "pct": pct, "source": args.ctx_source.strip(),
+                     "fedTokens": int(args.ctx_used),
+                     "fedCompactions": int(st.get("compactions", 0) or 0),
+                     "fedModel": str(st.get("model") or ""),
+                     "anchorBytes": anchor, "transcript": tp,
+                     "baseline": prev.get("baseline"),
                      "fedAt": now_iso(),
                      "limit_basis": why if mode != "uncalibrated"
                      else "engine default/model hint (uncalibrated)"}
@@ -113,6 +130,15 @@ def main(argv):
         sys.stderr.write("\nrecorded for session %s (resolved by %s) -> %s\n"
                          % (sid or "unknown", how, path))
     return 0
+
+
+def main(argv):
+    held = []
+    try:
+        return _main(argv, held)
+    finally:
+        for lk in held:
+            lk.__exit__()
 
 
 if __name__ == "__main__":

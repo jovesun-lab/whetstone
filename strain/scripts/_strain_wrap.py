@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""Mark a wrap -- the only thing that resets the counters.
+"""Stamp a wrap -- this session wrapped / handed off. It resets nothing (0.7.0).
 
-    strain-wrap.sh                      mark this session wrapped
-    strain-wrap.sh --label "phase 2"    name it, so the next boot can say what reset it
-    strain-wrap.sh --with-debt          wrapped, but with known loose ends
-    strain-wrap.sh --status             show the current marker
+    strain-wrap.sh                      stamp: this session wrapped
+    strain-wrap.sh --label "phase 2"    name what was handed off
+    strain-wrap.sh --with-debt          wrapped, with known loose ends
+    strain-wrap.sh --status             show this session's wrap state
 
-Run it when the work is actually finished: the handoff is written, the tests are green,
-the thing is done. That is the objective event strain resets on. It is deliberately a
-separate command from `strain-level.sh` -- recording that a session felt heavy and
-declaring it finished are different claims, and letting one imply the other is how a
-counter ends up being reset by a mood.
-
-Pairs with any wrap discipline you already have. If you use a handoff step, call this as
-its last line and the two stay in sync for free.
+WHAT A STAMP MEANS: "this session wrapped / handed off" -- NOT "the work is right" (that
+is your project's own check and your own judgement). Until 0.6.0 the stamp was a shared
+marker that RESET counters at the next session start; that reset another live session
+of the same signature, and reset a session that kept working in the same full context
+after its own wrap. Now the stamp records wrappedAt / wrapTick in this session's own
+state and, for a signed session with a ledger, appends one `wrap` row to the ledger.
+A new session starts at zero anyway (one session, one file); the next session's sign
+reports this one (strain-sign.sh). Work after a stamp makes it stale: the tick says so.
 """
 import argparse, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _strain_common import (state_dir, wrap_path, session_path, load, save, now_iso,
-                            resolve_sid, ledger_append)
+from _strain_common import (state_dir, session_path, load, save, now_iso,
+                            resolve_sid, ledger_append_why, signals_of, state_lock)
 
 
 def main(argv):
@@ -33,54 +33,54 @@ def main(argv):
     args, _ = ap.parse_known_args(argv)
 
     sdir = state_dir(args.state_dir)
-    path = wrap_path(sdir)
-
-    if args.status:
-        m = load(path)
-        sys.stdout.write(json.dumps(m, indent=1) + "\n" if m else "no wrap marker\n")
-        return 0
-
     sid, how = resolve_sid(sdir, args.session)
-    # 0.5.0: the marker carries the wrapping session's signature -- explicit --agent
-    # first, else whatever the session signed as (strain-sign.sh). An unsigned wrap
-    # writes agent "" and behaves exactly as before; a signed one resets only sessions
-    # carrying the same signature (see _strain_reset.py).
-    st = load(session_path(sdir, sid)) if sid else {}
-    agent = args.agent or os.environ.get("STRAIN_AGENT") or str(st.get("agent") or "")
-    marker = {
-        "ts": now_iso(),
-        "verdict": "CLEAN-WITH-DEBT" if args.with_debt else "CLEAN",
-        "label": args.label or "",
-        "session": sid,
-        "resolved_by": how,
-        "agent": agent,
-    }
-    if not save(path, marker):
-        sys.stderr.write("could not write wrap marker to %s\n" % path)
-        return 1
-    # 0.5.0: a signed session with a ledger also books the wrap -- one row in the
-    # project's account book, beside the boot-sign row the sign wrote.
+    if not sid:
+        sys.stderr.write("no session to stamp: no --session, no STRAIN_SESSION, and the "
+                         "index knows nothing yet (a hook has to run once first)\n")
+        return 2
+    path = session_path(sdir, sid)
+    with state_lock(path):
+        st = load(path)
+        if args.status:
+            sys.stdout.write(json.dumps({"session": sid, "agent": st.get("agent") or None,
+                                         "wrappedAt": st.get("wrappedAt") or None,
+                                         "wrapTick": st.get("wrapTick"),
+                                         "tick": int(st.get("tick", 0) or 0)}, indent=1) + "\n")
+            return 0
+        agent = args.agent or os.environ.get("STRAIN_AGENT") or str(st.get("agent") or "")
+        ts = now_iso()
+        tick = int(st.get("tick", 0) or 0)
+        verdict = "WRAPPED-WITH-DEBT" if args.with_debt else "WRAPPED"
+        st["wrappedAt"] = ts
+        st["wrapTick"] = tick
+        st["updated"] = ts
+        if not save(path, st):
+            sys.stderr.write("could not write state to %s\n" % path)
+            return 1
+    # a signed session with a ledger also books the stamp -- one row beside its boot-sign
     ledger = str(st.get("ledger") or "")
     booked = ""
     if ledger:
-        ok = ledger_append(ledger, {
-            "type": "wrap", "ts": marker["ts"], "session": sid, "agent": agent,
-            "verdict": marker["verdict"], "label": marker["label"],
-            "tier": str(st.get("last", "") or ""), "tick": int(st.get("tick", 0) or 0)})
-        booked = " · booked" if ok else " · WARNING: the book could not be written"
-    # CHAT SURFACE, two registers (0.5.1): stdout is USER-SURFACE -- Owner-form,
-    # plain words, no paths; stderr carries the paths for the agent.
+        sig = signals_of(st)
+        why = ledger_append_why(ledger, {
+            "type": "wrap", "ts": ts, "session": sid, "agent": agent, "verdict": verdict,
+            "label": args.label or "", "tier": str(st.get("last", "") or ""), "tick": tick,
+            "compactions": int(st.get("compactions", 0) or 0),
+            "escaped": sum(1 for x in sig if x.get("escaped")),
+            "caught": sum(1 for x in sig if not x.get("escaped"))})
+        booked = " · booked" if not why else " · WARNING: the book could not be written"
+        if why:
+            sys.stderr.write("ledger not written: %s\n" % why)
+    # CHAT SURFACE, two registers: stdout is USER-SURFACE -- plain words, no paths;
+    # stderr carries the paths for the agent.
+    extra = (" · " + args.label if args.label else "") + \
+        (" · with known loose ends" if args.with_debt else "")
     if agent:
-        sys.stdout.write("Strain · Owner: %s — wrap marked (%s)%s%s\n"
-                         % (agent, marker["verdict"],
-                            " · " + args.label if args.label else "", booked))
+        sys.stdout.write("Strain · Owner: %s — wrapped%s%s\n" % (agent, extra, booked))
     else:
-        sys.stdout.write("Strain — wrap marked (%s)%s%s\n"
-                         % (marker["verdict"],
-                            " · " + args.label if args.label else "", booked))
-    sys.stderr.write("details: counters reset at the next session start%s · marker %s%s\n"
-                     % (" (same-signature sessions only)" if agent else "", path,
-                        (" · ledger " + ledger) if ledger else ""))
+        sys.stdout.write("Strain — wrapped%s%s\n" % (extra, booked))
+    sys.stderr.write("details: session %s (via %s) · tick %d · nothing reset%s\n"
+                     % (sid[:12], how, tick, (" · ledger " + ledger) if ledger else ""))
     return 0
 
 

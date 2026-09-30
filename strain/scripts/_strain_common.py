@@ -23,13 +23,15 @@ STATE SCHEMA (one JSON object per session file)
     model         model string from the SessionStart payload, when the host supplies it
     cwd           working directory, used to resolve "the current session" from the CLI
     updated       ISO timestamp of the last write
-    consumed_wrap ts of the wrap marker that last triggered a reset (consume-once)
+    wrappedAt     ts of this session's last wrap stamp (strain-wrap.sh), 0.7.0
+    wrapTick      the tick count at that stamp -- work after it makes the stamp stale
     ctx           context measurement, when the host exposes one (see _strain_context.py)
 
-RESET BOUNDARY
-    Counters reset on an unconsumed wrap marker, not on the host's session labels.
-    A host may fire `resume` on every turn, so its vocabulary does not mark a unit of
-    work -- finishing does. `strain-wrap.sh` writes the marker; SessionStart consumes it.
+NOTHING RESETS (0.7.0)
+    A session's counters are never reset. A new session is a new file, so it starts at
+    zero; a wrap only records that the session wrapped. (Until 0.6.0 a shared wrap
+    marker reset counters at the next session start -- including another live
+    session's, and a session still working in the same full context.)
 """
 import json, os, time
 
@@ -65,10 +67,6 @@ def index_path(sdir):
     return os.path.join(sdir, "index.json")
 
 
-def wrap_path(sdir):
-    return os.environ.get("STRAIN_WRAP_MARKER") or os.path.join(sdir, "wrap-marker.json")
-
-
 def load(path):
     try:
         with open(path) as f:
@@ -89,6 +87,39 @@ def save(path, obj):
         os.replace(tmp, path)
         return True
     except Exception:
+        return False
+
+
+class state_lock(object):
+    """0.7.0: one read-modify-write of a session file at a time. Parallel tool calls
+    fire parallel PostToolUse hooks; without a lock two of them read the same count and
+    both write count+1 -- a lost update (0.6.0 selftest: 72 parallel ticks, counts lost).
+    The save is already atomic (tmp + rename), so the lock only serialises the RMW.
+    Best effort: a platform without fcntl runs unlocked, as before."""
+    def __init__(self, path):
+        self.path = path + ".lock"
+        self.f = None
+
+    def __enter__(self):
+        try:
+            import fcntl
+            d = os.path.dirname(self.path)
+            if d and not os.path.isdir(d):
+                os.makedirs(d, exist_ok=True)
+            self.f = open(self.path, "a")
+            fcntl.flock(self.f, fcntl.LOCK_EX)
+        except Exception:
+            self.f = None
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            if self.f is not None:
+                import fcntl
+                fcntl.flock(self.f, fcntl.LOCK_UN)
+                self.f.close()
+        except Exception:
+            pass
         return False
 
 
@@ -172,7 +203,7 @@ def resolve_sid(sdir, explicit=None, cwd=None):
 def blank(sid="", cwd=""):
     return {"sid": sid, "tick": 0, "last": "Healthy", "compactions": 0,
             "source": "", "model": "", "cwd": cwd, "updated": now_iso(),
-            "consumed_wrap": "", "ctx": {}, "substrate": "", "signals": []}
+            "ctx": {}, "substrate": "", "signals": []}
 
 
 def signals_of(st):
@@ -282,6 +313,21 @@ def ledger_append(path, row):
         return True
     except Exception:
         return False
+
+
+def ledger_append_why(path, row):
+    """0.7.0: the same append, returning "" on success or WHY it failed -- a missing
+    folder, a read-only file and a lock failure used to read the same."""
+    if ledger_append(path, row):
+        return ""
+    d = os.path.dirname(os.path.abspath(path))
+    if not os.path.isdir(d):
+        return "the folder %s does not exist" % d
+    if os.path.exists(path) and not os.access(path, os.W_OK):
+        return "no write permission on %s" % path
+    if not os.access(d, os.W_OK):
+        return "no write permission in the folder %s" % d
+    return "the append failed (lock or write error) on %s" % path
 
 
 def ledgers_registry_path(sdir):

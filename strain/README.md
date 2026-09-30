@@ -18,11 +18,13 @@ mentions the session has gone bad, and lets you find out from the output.
 1. **Install** the plugin.
 2. Work as usual. Every 10 tool calls the agent is asked to run the check and report a
    tier — 🟢 Healthy, 🟡 Mid / High, 🔴 Warning / Danger.
-3. When it says wrap, wrap — and mark it:
+3. When it says wrap, wrap — and stamp it:
    ```
-   bash "$CLAUDE_PLUGIN_ROOT/scripts/strain-wrap.sh" --label "what was finished"
+   bash <strain>/scripts/strain-wrap.sh --label "what was handed off"
    ```
-   That is the only thing that resets the counters.
+   `<strain>` is the plugin folder; every tick prints the commands with the real path
+   and this session's key already filled in. A stamp records that the session wrapped;
+   it resets nothing — a new session starts at zero anyway.
 
 Nothing to configure. Nothing leaves your machine.
 
@@ -74,7 +76,7 @@ per-host parsers:
 **Denominator** — record your environment's window once, sourced and typed:
 
 ```
-bash "$CLAUDE_PLUGIN_ROOT/scripts/strain-calibrate.sh" --product "Codex CLI" \
+bash <strain>/scripts/strain-calibrate.sh --product "Codex CLI" \
      --window 258400 --basis runtime --source "host runtime log"
 ```
 
@@ -87,7 +89,7 @@ one falls back loudly — it never silently keeps ruling.
 **Numerator** — when the host shows its usage, hand it over at recording time:
 
 ```
-bash "$CLAUDE_PLUGIN_ROOT/scripts/strain-level.sh" Mid --ctx-used 65749 --ctx-source "host runtime log"
+bash <strain>/scripts/strain-level.sh Mid --ctx-used 65749 --ctx-source "host runtime log"
 ```
 
 The readout then says `fill 25.4% — agent-fed: 65,749 of 258,400 tokens (calibrated …)`.
@@ -113,23 +115,52 @@ session slot, so a second session simply overwrote the first and both counters b
 meaningless. The session id is also how the host names the transcript — so *whose strain
 is this* and *can I read this session's real context size* are the same question.
 
+## Cloud Cowork (0.7.0)
+
+- **Works:** during a conversation, strain watches how full the context is and tells your
+  agent when it's time to wrap up — same as on your own computer.
+- **Not yet:** strain can't carry anything from one cloud conversation to the next by
+  itself. Each new conversation starts fresh (strain's files live with the cloud task, and
+  the task cannot write a ledger into a connected folder).
+
+**Tip — let your agent carry it over.** Put a handoff file (for example `HANDOFF.md`) in a
+folder connected to the task, and add these two rules to your agent's instructions:
+
+1. "When you wrap up, run `strain-level.sh --show` and write one line into HANDOFF.md: the
+   date, tool calls, compactions, errors that reached me, and the final strain level."
+2. "At the start of every conversation, read that line in HANDOFF.md and tell me how the
+   last session went."
+
+Keep the desktop app open while the agent writes the file, and check that it arrived — we
+have seen a cloud write land an older copy.
+
+- **Several agents, in the cloud and on your computer, sharing one history:** not supported
+  yet; planned for a later version. Need it sooner, or something else? Open an
+  [issue](https://github.com/jovesun-lab/whetstone/issues).
+
+*This release has not been tried in a cloud task yet. The cloud behaviour above comes from
+testing an earlier build, and the tip has not been tested end to end.*
+
 ## Signed wraps and the project ledger
 
-The wrap marker is one file per state dir — and that bites the moment a second agent
-shares the machine: agent A marking its wrap used to reset agent B's **live** session at
-B's next session start. Real strain, wiped by someone else's finish line. The path cannot
-tell agents apart (two windows on one project look identical to the hooks), so identity
-is **declared**, not derived:
+The path cannot tell agents apart (two windows on one project look identical to the
+hooks), so identity is **declared**, not derived:
 
 ```
-bash "$CLAUDE_PLUGIN_ROOT/scripts/strain-sign.sh" --agent ana --ledger ./Log.strain
+bash <strain>/scripts/strain-sign.sh --agent ana --ledger ./Log.strain
 ```
 
-Signing names this session's agent. A wrap marked by a signed session carries that
-signature, and a signed marker resets **only sessions with the same signature** — others
-keep their counters and get one line saying whose marker it is. An unsigned marker
-behaves exactly as before: signing is opt-in, and only matters once a second agent shows
-up.
+Signing names this session's agent. With a ledger, the **first** sign of a session also
+prints a **previous-session report** (0.7.0): the newest earlier session of the same
+agent in that book — its tool calls, compactions, errors escaped and caught, whether it
+wrapped (and when), and whether it kept working after the wrap. It only reads; nothing
+is carried over.
+
+**Until 0.6.0 a wrap was a shared marker that reset counters** at the next session start
+— which reset another live session of the same signature, and reset a session that kept
+working in the same full context after its own wrap. Since 0.7.0 a wrap resets nothing:
+it records `wrappedAt` / `wrapTick` in the session's own state and books one `wrap` row.
+An old `wrap-marker.json` in your state dir is ignored and can be deleted.
 
 The `--ledger` part is optional and adds a durable account book: an append-only JSONL
 file (suggest `Log.strain` at the project root, gitignored) that receives one
@@ -186,9 +217,12 @@ since v0.4 their **combination** can also raise the alarm (see below):
 - **Line B — conduct**: the escaped-signal ladder (0–2 move nothing · 3 → Mid · 4 →
   High · ≥5 → Warning). A burst of escapes usually shares one root cause — a capability
   gap, not exhaustion — which is why small counts don't tier.
-- Compactions floor as before (1 → High, ≥2 → Warning, plus a recovery directive).
+- Compactions are **stated, never a floor** (0.7.0): every tick after one says
+  "compaction #N", and a one-time recovery directive asks the agent to re-read its goal.
+- **UNMEASURED** (0.7.0): when Line A abstains and Line B says nothing, the proposal is
+  `UNMEASURED` — never "Healthy" — with the command to feed the host's own reading.
 
-The final tier is the **max** of the three, plus one **combination alarm** (v0.4): when
+The final tier is the **max** of the two lines, plus one **combination alarm** (v0.4): when
 Line A is already at Warning/Danger **and** the escaped count has reached 3, the
 composite tops the proposal out at **Danger**, with a loud basis line naming both
 conditions. It is not a weight or a multiplier — it names the one compound state
@@ -201,13 +235,17 @@ answer different questions. The proposal is still allowed to DECAY when the load
 nothing escalates on tick count — the old "continuing past a Warning ⇒ Danger" rule
 pinned Danger at a measured 33% fill, three sessions running, and stays deleted.
 
-A compaction is not a fresh start. It is the clearest evidence available that the session
-has run long, so it raises the floor and does not come back down.
+A compaction cuts the context; it is not a load reading. Until 0.6.0 it floored the tier
+(1 → High, 2+ → Warning), which read a session that had just been compacted to a small
+context as heavily loaded. The fill after it is the measure.
 
 ## Commands
 
-All of these live in the plugin folder, so the agent runs them as
-`bash "$CLAUDE_PLUGIN_ROOT/scripts/<name>"`:
+All of these live in the plugin folder: `bash <strain>/scripts/<name>`. **The tick prints
+each one ready to run** — this session's key, the state folder and the plugin's absolute
+path filled in — so the agent copies it from there. (Until 0.6.0 the tick printed
+`"$CLAUDE_PLUGIN_ROOT/scripts/…"`; that variable exists only inside the hook process, so
+the command failed in the agent's own shell.)
 
 | Command | What it does |
 |---|---|
@@ -219,9 +257,9 @@ All of these live in the plugin folder, so the agent runs them as
 | `strain-level.sh --show` | the whole state, including the context reading and which file it came from |
 | `strain-signal.sh <kind> --caught\|--escaped` | record a hard signal; escaped ones floor the tier, caught ones feed the pattern note |
 | `strain-signal.sh --list` | print this session's signal ledger |
-| `strain-wrap.sh --label "…"` | mark the work wrapped; resets the counters once, at the next session start |
-| `strain-wrap.sh --status` | show the current wrap marker |
-| `strain-sign.sh --agent <name> [--ledger <path>]` | declare who works this session; scope wraps to that signature, optionally book boot-sign/wrap rows into a project ledger |
+| `strain-wrap.sh --label "…" [--with-debt]` | stamp this session wrapped / handed off; resets nothing; books a `wrap` row when signed with a ledger |
+| `strain-wrap.sh --status` | show this session's wrap state |
+| `strain-sign.sh --agent <name> [--ledger <path>]` | declare who works this session; with a ledger, book boot-sign/wrap rows and report the previous session of the same agent |
 
 `strain-level.sh` prints which session it resolved and where it wrote. That is deliberate:
 in an earlier build the writer defaulted to a different file from the one the hooks read,
@@ -301,12 +339,14 @@ requires the other.
 python3 tools/selftest.py -v
 ```
 
-63 checks, host-independent: counting, per-session isolation, the tick firing on schedule
-and only then, the writer and reader agreeing on one location, wrap-marker reset semantics
-(including that one wrap buys exactly one reset), compaction escalation, all three context
-modes, model observation (logged on change, a mid-session switch gets its own row, no
-empty rows), the denominator following the observed model, fill-band math on two
-capacities, escaped-vs-caught signal weighting, the boot calibration line, and malformed
+128 checks, host-independent: counting, per-session isolation, the tick firing on schedule
+and only then, the writer and reader agreeing on one location, wraps that reset nothing
+(and touch no other session), compactions stated but never floored, all three context
+modes plus a fed reading that is scored and kept, model observation (logged on change, a
+mid-session switch gets its own row, no empty rows), the denominator following the observed
+model, fill-band math on two capacities, escaped-vs-caught signal weighting, the boot line
+printing the same caps as the tick, a printed record command that runs from a plain shell,
+parallel ticks losing no count, the previous-session report, and malformed
 payloads never failing a tool call — plus the **negative fixture**: the v1 bug (Danger
 pinned at a measured 33% fill by tick-count ratcheting) reproduced against the v1
 scripts, where 19 of these checks fail, and passing here.

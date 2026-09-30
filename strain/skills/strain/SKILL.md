@@ -76,7 +76,7 @@ count behaviour instead. **Never quote a context number you did not measure.**
 | **A regression that reached shipped work** | **hard, escaped** | one per regression; record it |
 | **An error you caught and fixed pre-delivery** | **hard, caught** | recorded, tiers nothing |
 | **A revert of your own work** | **hard** | escaped if the user saw the churn |
-| **A context compaction** | **hard** | the host compacted; the session has run long |
+| **A context compaction** | **stated, never a tier input** | the tick says "compaction #N"; re-read your goal and handoff |
 
 Soft signals are colour, not ladder. Hard signals are ABSOLUTE — the same on any window
 size — but only the ones that **escaped** move the tier. A caught-and-fixed error is a
@@ -85,35 +85,48 @@ class earn a *pattern note* instead of a tier. Record every hard signal when it 
 so the counters know what you know:
 
 ```
-bash "$CLAUDE_PLUGIN_ROOT/scripts/strain-signal.sh" <kind> --caught|--escaped
+bash <strain>/scripts/strain-signal.sh <kind> --caught|--escaped
 ```
 
-A compaction is not a fresh start — it is the clearest evidence there is that the
-session has run long.
+**Copy the full command from the tick line** — it carries this session's key, the state
+folder and the plugin's absolute path. `$CLAUDE_PLUGIN_ROOT` exists only inside the hook
+process, never in your shell, so a command built on it fails (fixed in 0.7.0).
+
+A compaction cuts the context. Every tick after it says so ("compaction #N"), and a
+one-time recovery directive asks you to re-read your goal and handoff — but it never
+raises the tier: the fill after it is what measures the load (0.7.0).
 
 ## The tiers
 
-Fill is the PRIMARY signal: what fraction of the detected context window is occupied.
-The default bands are **40 / 60 / 75 / 85%**, calibrated to the window the plugin
-detects at boot (a 200k and a 1M session get different absolute budgets from the same
-bands — no per-host table). The tick computes and PROPOSES the tier; your job is to
-confirm it or adjust it with what the counters cannot see.
+Two lines are scored separately and the higher one wins. The tick computes and PROPOSES
+the tier; your job is to confirm it or adjust it with what the counters cannot see.
 
-| Tier | Fill band | Also reached by | What it means |
+- **Line A — capacity:** fill against caps **50 / 60 / 70 / 74%** → Mid / High / Warning /
+  Danger (Danger is derived = throttle onset 80 − wrap budget 6, so a mandated wrap can
+  finish before the model degrades). It **abstains** when the number cannot be trusted.
+- **Line B — conduct:** escaped signals — 0–2 move nothing · 3 → Mid · 4 → High · 5+ →
+  Warning. A burst usually shares one root cause (a capability gap), not exhaustion.
+- **Combination:** fill already at Warning/Danger **and** 3+ escaped → Danger.
+- **UNMEASURED** (0.7.0): Line A abstains and Line B says nothing → the proposal is
+  `UNMEASURED`, never Healthy. Say you are counting behaviour only, and feed the host's
+  own reading if it shows one (`strain-level.sh <tier> --ctx-used <n> --ctx-source "<where>"`).
+
+| Tier | Fill cap | Also reached by | What it means |
 |---|---|---|---|
-| **Healthy** | under 40% | — | carry on |
-| **Mid** | 40–60% | — | fine, but the end is in sight |
-| **High** | 60–75% | 1 escaped signal, or 1 compaction | wrap after the current thread |
-| **Warning** | 75–85% | 2+ escaped signals, or 2+ compactions | wrap now; new work should start fresh |
-| **Danger** | 85%+ | Warning-band fill **plus** an escaped signal | stop and hand off |
+| **Healthy** | under 50% | — | carry on |
+| **Mid** | 50–60% | 3 escaped signals | fine, but the end is in sight |
+| **High** | 60–70% | 4 escaped signals | wrap after the current thread |
+| **Warning** | 70–74% | 5+ escaped signals | wrap now; new work should start fresh |
+| **Danger** | 74%+ | Warning-level fill **plus** 3+ escaped | stop and hand off |
 
-The bands are printed in every readout and are configurable; retune them to your setup.
+The caps are printed in every readout (the boot line and every tick show the same ones)
+and are configurable; retune them to your setup.
 
 **Escalate only on evidence, never on momentum.** Ticks accumulating is not evidence; a
 previous high reading is not evidence. Fill crossing a band and fresh escaped signals
 are the only ladders — and strain DECAYS: when the proposal comes in lower than the
-carried tier and nothing new happened, record the lower tier. Floors from compactions
-and escaped signals hold; everything else is allowed to relax. (The old
+carried tier and nothing new happened, record the lower tier. Floors from escaped
+signals hold; everything else is allowed to relax. (The old
 "continuing past a Warning ⇒ Danger" rule is deleted — it pinned Danger at a measured
 33% fill, three sessions running.)
 
@@ -134,38 +147,39 @@ Match the shape to the tier. The point is that the user can act without asking f
 Then **record it**, so the next tick carries it forward instead of starting over:
 
 ```
-bash "$CLAUDE_PLUGIN_ROOT/scripts/strain-level.sh" <Healthy|Mid|High|Warning|Danger>
+bash <strain>/scripts/strain-level.sh <Healthy|Mid|High|Warning|Danger>
 ```
+
+(Again: copy the filled command from the tick line.)
 
 An unrecorded tier is how this reading silently sits at its first value forever while
 every check around it runs correctly.
 
 ## Wrapping
 
-When the tier says wrap, wrap — and mark it, because that is the only thing that resets
-the counters:
+When the tier says wrap, wrap — and stamp it at the handoff:
 
 ```
-bash "$CLAUDE_PLUGIN_ROOT/scripts/strain-wrap.sh" --label "what was finished"
+bash <strain>/scripts/strain-wrap.sh --label "what was handed off"
 ```
 
-A wrap means the work is actually closed: the handoff is written, the tests are green,
-the thing is done. Recording that a session felt heavy and declaring it finished are
-different claims — do not let one imply the other.
+A stamp means **this session wrapped / handed off** — not "the work is right" (that is
+your project's own check). It resets nothing (0.7.0): a new session starts at zero
+anyway, and resetting a session that keeps working in the same full context would hide
+real load. If you keep working after the stamp, the tick says so ("N calls since the
+wrap") — re-run it at the next handoff.
 
-**Sharing the machine with another agent? Sign first.** The wrap marker is one file per
-state dir, so an unsigned wrap resets every session's counters — including a colleague's
-live one. Early in the session (once you know who you are), declare it:
+**Sign early** (once you know who you are), especially when another agent or a later
+session will work the same project:
 
 ```
-bash "$CLAUDE_PLUGIN_ROOT/scripts/strain-sign.sh" --agent <your-name> [--ledger ./Log.strain]
+bash <strain>/scripts/strain-sign.sh --agent <your-name> [--ledger ./Log.strain]
 ```
 
-Your wrap then carries your signature and resets only your own sessions; other agents
-keep their counters and see one line naming whose marker it is. The optional ledger is
-an append-only account book of the project's sessions (boot-sign and wrap rows) — it
-records the chain, it never carries counters across sessions. Solo on the machine,
-skip all of this: an unsigned wrap behaves exactly as it always did.
+With a ledger (an append-only account book: boot-sign and wrap rows), the FIRST sign of a
+session also reports the previous session of the same agent — its tool calls,
+compactions, errors escaped and caught, whether it wrapped and whether it kept working
+after — so a handoff arrives with its numbers. It only reads; nothing is carried over.
 
 **If the sign itself fails because your shell cannot reach the state home** (a
 sandboxed or remote session), do not silently stay unsigned — deliver the sign by

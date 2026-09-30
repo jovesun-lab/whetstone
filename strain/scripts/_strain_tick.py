@@ -12,12 +12,12 @@ Mechanism: PostToolUse honours `hookSpecificOutput.additionalContext`, which the
 wraps in a reminder and shows to the agent. Plain stdout would not work here -- for
 PostToolUse it goes to the debug log and the agent never sees it.
 """
-import argparse, json, os, sys
+import argparse, json, os, shlex, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (TIERS, state_dir, session_path, load, save, blank, now_iso,
                             touch_index, read_payload, log_model, floor_tier,
-                            signals_of, signal_floor, pattern_note)
+                            signals_of, signal_floor, pattern_note, state_lock)
 import _strain_context as ctxmod
 
 DEFAULT_N = 10          # tool calls between ticks
@@ -102,7 +102,7 @@ def propose_tier(st, ctx):
     pct = ctx.get("pct")
     line_a = "Healthy"
     a_scored = False
-    if mode not in ("measured", "estimated") or pct is None:
+    if mode not in ("measured", "estimated", "agent-fed") or pct is None:
         logs.append("Line A abstains: no trustworthy fill measurement (mode %s)"
                     % (mode or "none"))
     elif not (0.0 <= float(pct) <= 100.0):
@@ -125,14 +125,16 @@ def propose_tier(st, ctx):
         elif p >= mid:
             line_a = "Mid"
         logs.append("Line A %s (fill %s%%%s)"
-                    % (line_a, pct, ", estimated" if mode == "estimated" else ""))
+                    % (line_a, pct, {"estimated": ", estimated",
+                                     "agent-fed": ", agent-fed"}.get(mode, "")))
     line_b = signal_floor(st) or "Healthy"
     escaped = sum(1 for s in signals_of(st) if s.get("escaped"))
     logs.append("Line B %s (escaped %d)" % (line_b, escaped))
+    # 0.7.0: a compaction is STATED, never a tier floor. It says the context was cut, not
+    # that the session is loaded -- the fill after it is what measures the load.
     comp = int(st.get("compactions", 0))
-    line_c = "Warning" if comp >= 2 else ("High" if comp == 1 else "Healthy")
     if comp:
-        logs.append("compaction floor %s (count %d)" % (line_c, comp))
+        logs.append("compaction #%d this session (stated, never a floor)" % comp)
         directives.append("RECOVERY DIRECTIVE: context was cut unfiltered (%d time%s)"
                           " -- re-read the goal anchor and the handoff."
                           % (comp, "s" if comp > 1 else ""))
@@ -144,14 +146,15 @@ def propose_tier(st, ctx):
                     % (line_a, escaped))
     val_a = TIERS.index(line_a) if a_scored else 0
     val_b = TIERS.index(line_b)
-    val_c = TIERS.index(line_c)
     val_d = TIERS.index(line_d)
-    final = max(val_a, val_b, val_c, val_d)
+    final = max(val_a, val_b, val_d)
     tier = TIERS[final]
     if val_b > val_a and val_b == final:
         logs.append("tier clamped by Line B (escaped conduct)")
-    elif val_c > val_a and val_c > val_b and val_c == final:
-        logs.append("tier floored by host compactions")
+    # 0.7.0: nothing measured AND nothing else to say is UNMEASURED -- never "Healthy".
+    # (A Codex session read 140% of a wrong window and the proposal said Healthy.)
+    if not a_scored and final == 0:
+        tier = "UNMEASURED"
     if a_scored and float(pct) >= throttle and escaped > 0:
         logs.append("observation: throttle zone (>=%g%%) -- errors likely"
                     " capacity-induced" % throttle)
@@ -167,7 +170,7 @@ def caps_calibration_line(ctx, substrate=""):
     mode = (ctx or {}).get("mode") or "pending"
     def k(n):
         return ("%gM" % (n / 1000000.0)) if n >= 1000000 else ("%.0fk" % (n / 1000.0))
-    line = ("strain calibrated: %s · window %s · fill caps %g/%g/%g/%g%% -> "
+    line = ("strain calibration: %s · window %s · fill caps %g/%g/%g/%g%% -> "
             "Mid/High/Warning/Danger (danger derived) · signal mode %s"
             % (substrate or "unknown", k(lim), mid, high, warning, danger, mode))
     if invalid:
@@ -175,17 +178,97 @@ def caps_calibration_line(ctx, substrate=""):
     return line
 
 
-def build_directive(n, st, ctx, substrate=""):
+def describe_ctx(ctx):
+    """The MEASURED line; 0.7.0 adds the agent-fed reading (source, and what was added
+    since the feed from transcript growth)."""
+    ctx = ctx or {}
+    if ctx.get("mode") == "agent-fed" and ctx.get("tokens") is not None:
+        k = lambda n: ("%gM" % (n / 1000000.0)) if n >= 1000000 else ("%.0fk" % (n / 1000.0))
+        line = ("context %s/%s (%.0f%%), AGENT-FED: %s tokens read from %s"
+                % (k(ctx["tokens"]), k(ctx.get("limit") or ctxmod.limit()),
+                   ctx.get("pct") or 0, "{:,}".format(int(ctx.get("fedTokens") or 0)),
+                   ctx.get("source") or "an unnamed source"))
+        if ctx.get("deltaTokens"):
+            line += (" + %s estimated since (transcript bytes appended after the feed, /4)"
+                     % "{:,}".format(int(ctx["deltaTokens"])))
+        return line + " -- feed a fresh reading whenever the host shows one"
+    return ctxmod.describe(ctx)
+
+
+def carry_feed(fed, fresh, st):
+    """0.7.0 -- the reading when the last one was FED and this call's own is not a real
+    measurement. A fed reading stands until a measured one or a newer feed replaces it
+    (0.6.0 overwrote it on the very next call). It is the ANCHOR: only transcript bytes
+    appended AFTER it are added (/4), never the whole file (a whole-file estimate read a
+    124K/258K session as 150%). A compaction or a model switch after the feed VOIDS it:
+    the context it measured is gone, so the answer is UNMEASURED, not a stale number."""
+    void = ""
+    if int(st.get("compactions", 0) or 0) > int(fed.get("fedCompactions", 0) or 0):
+        void = "a compaction since the feed voided it"
+    elif fed.get("fedModel") and fresh.get("model") and fresh.get("model") != fed.get("fedModel"):
+        void = "a model switch since the feed voided it (%s -> %s)" % (fed.get("fedModel"),
+                                                                    fresh.get("model"))
+    if void:
+        return {"mode": "unmeasured", "voided": True, "tokens": None, "pct": None,
+                "why": void + " -- feed a new reading", "limit": fresh.get("limit"),
+                "model": fresh.get("model") or "", "transcript": fresh.get("transcript") or ""}
+    out = dict(fed)
+    tp = fresh.get("transcript") or fed.get("transcript") or ""
+    try:
+        size = os.path.getsize(tp) if tp else None
+    except Exception:
+        size = None
+    if out.get("anchorBytes") is None and size is not None:
+        out["anchorBytes"] = size
+    delta = 0
+    if size is not None and out.get("anchorBytes") is not None:
+        delta = max(0, size - int(out["anchorBytes"])) // 4
+    out["tokens"] = int(out.get("fedTokens") or 0) + delta
+    out["deltaTokens"] = delta
+    out["transcript"] = tp
+    lim = out.get("limit") or fresh.get("limit")
+    out["pct"] = round(100.0 * out["tokens"] / float(lim), 1) if lim else None
+    return out
+
+
+def act_command(script, st, sdir, args):
+    """0.7.0: a command the AGENT can run from its own shell. $CLAUDE_PLUGIN_ROOT exists
+    only inside the hook process, so the old printed form always failed there. This one
+    names the running copy's absolute path, this session and this state dir."""
+    sid = str(st.get("sid") or "")
+    pre = ("STRAIN_SESSION=%s " % shlex.quote(sid)) if sid else ""
+    return "%sSTRAIN_STATE_DIR=%s bash %s %s" % (
+        pre, shlex.quote(sdir), shlex.quote(os.path.join(os.path.dirname(
+            os.path.abspath(__file__)), script)), args)
+
+
+def wrap_line(st):
+    """0.7.0: whether this session has wrapped (strain-wrap.sh), and what ran since."""
+    tick = int(st.get("tick", 0) or 0)
+    wrapped = str(st.get("wrappedAt", "") or "")
+    if not wrapped:
+        return " This session: %d tool call%s, not wrapped yet." % (tick, "" if tick == 1 else "s")
+    since = tick - int(st.get("wrapTick", 0) or 0)
+    line = " This session: %d tool call%s, wrapped at %s" % (tick, "" if tick == 1 else "s",
+                                                           wrapped[11:16])
+    if since > 0:
+        line += (", %d call%s since the wrap -- re-run strain-wrap.sh if you hand off again"
+                 % (since, "" if since == 1 else "s"))
+    return line + "."
+
+
+def build_directive(n, st, ctx, substrate="", sdir=""):
     bits = []
-    ctx_line = ctxmod.describe(ctx)
+    ctx_line = describe_ctx(ctx)
     if ctx_line:
         bits.append(" MEASURED: %s." % ctx_line)
     else:
-        bits.append(" No context measurement on this host -- count behaviour, and say so"
-                    " rather than quoting a number you did not measure.")
+        bits.append(" No context measurement on this host%s -- count behaviour, and say so"
+                    " rather than quoting a number you did not measure."
+                    % ((" (%s)" % ctx["why"]) if (ctx or {}).get("why") else ""))
     if int(st.get("compactions", 0)) > 0:
-        bits.append(" Context has been COMPACTED %d time(s) this session -- an objective"
-                    " sign of length, floored into the proposal." % int(st["compactions"]))
+        bits.append(" Context has been COMPACTED: compaction #%d this session -- stated,"
+                    " never a tier floor." % int(st["compactions"]))
     note = pattern_note(st)
     if note:
         bits.append(" " + note)
@@ -200,6 +283,13 @@ def build_directive(n, st, ctx, substrate=""):
         st["recovery_announced"] = comp
     if directives:
         bits.append(" " + " ".join(directives))
+    if proposed == "UNMEASURED":
+        bits.append(" NOT MEASURED -- UNMEASURED is not Healthy. If the host shows its own"
+                    " usage, FEED it: `%s` -- the tier is then scored from that number"
+                    " (labelled agent-fed); otherwise say plainly that you are counting"
+                    " behaviour only."
+                    % act_command("strain-level.sh", st, sdir,
+                                  "<tier> --ctx-used <tokens> --ctx-source '<where you read it>'"))
     carried = st.get("last", "Healthy")
     decay = ""
     try:
@@ -222,18 +312,21 @@ def build_directive(n, st, ctx, substrate=""):
             " moves the tier (self-reported evidence does not floor)."
             " STRAIN_DRIFT_GLANCE=off drops this line.")
     return (
-        "\U0001FA7A STRAIN TICK (%d tool calls since the last check)."
-        " PROPOSED TIER: %s (%s); carried: %s.%s%s"
+        "\U0001FA7A STRAIN TICK (host-fired every %d tool call%s)."
+        " PROPOSED TIER: %s (%s); carried: %s.%s%s%s"
         " Confirm or adjust, then record it:"
-        " `bash \"$CLAUDE_PLUGIN_ROOT/scripts/strain-level.sh\" <Healthy|Mid|High|Warning|Danger>`."
+        " `%s`."
         " Adjust UP only for a NEW hard signal the state file has not seen -- record it"
-        " first (`strain-signal.sh <kind> --caught|--escaped`): an error that ESCAPED to"
+        " first (`%s`): an error that ESCAPED to"
         " the user floors the tier; one you caught and fixed pre-delivery is a working"
         " immune system and moves nothing (say so, don't tier on it). Never escalate"
         " because ticks accumulated or because the previous check was high -- fill and"
         " fresh signals are the only ladders. An unrecorded tier is how this reading"
         " silently stays at its first value.%s [%s]"
-        % (n, proposed, basis, carried, decay, "".join(bits), glance,
+        % (n, "" if n == 1 else "s", proposed, basis, carried, decay, "".join(bits),
+           wrap_line(st),
+           act_command("strain-level.sh", st, sdir, "<Healthy|Mid|High|Warning|Danger>"),
+           act_command("strain-signal.sh", st, sdir, "<kind> --caught|--escaped"), glance,
            caps_calibration_line(ctx, substrate or st.get("substrate", "")))
     )
 
@@ -252,6 +345,8 @@ def main():
     cwd = str(payload.get("cwd", "") or "")
 
     path = session_path(sdir, sid)
+    lock = state_lock(path)
+    lock.__enter__()
     st = load(path) or blank(sid, cwd)
     st["sid"] = sid or st.get("sid", "")
     if cwd:
@@ -266,6 +361,13 @@ def main():
     apply_calibration(sdir)
     prev_ctx = st.get("ctx") if isinstance(st.get("ctx"), dict) else {}
     ctx = ctxmod.measure(payload, sid, known_baseline=prev_ctx.get("baseline"))
+    # 0.7.0: measured > agent-fed (+ delta since its anchor) > byte estimate. A fed or
+    # voided reading stands until a real measurement or a newer feed replaces it.
+    if ctx.get("mode") != "measured":
+        if prev_ctx.get("mode") == "agent-fed":
+            ctx = carry_feed(prev_ctx, ctx, st)
+        elif prev_ctx.get("mode") == "unmeasured" and prev_ctx.get("voided"):
+            ctx = dict(prev_ctx, limit=ctx.get("limit"))
     st["ctx"] = ctx
     if not st.get("substrate"):
         st["substrate"] = ctxmod.detect_substrate(payload, cwd)
@@ -284,8 +386,9 @@ def main():
     # Build the directive BEFORE saving -- build_directive dedups the recovery
     # directive by mutating st (recovery_announced), and that mutation must persist.
     fire = N > 0 and st["tick"] % N == 0
-    directive = build_directive(N, st, ctx, st.get("substrate", "")) if fire else None
+    directive = build_directive(N, st, ctx, st.get("substrate", ""), sdir) if fire else None
     save(path, st)
+    lock.__exit__()
     touch_index(sdir, sid, cwd)
 
     if fire:

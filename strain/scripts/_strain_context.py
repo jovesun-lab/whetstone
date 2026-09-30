@@ -36,7 +36,7 @@ TIMING MATTERS
     usually does not exist on disk yet, so an earlier version of this probe recorded
     `exists: false` every single time and the capability looked impossible.
 """
-import glob, json, os
+import glob, json, os, re
 
 DEFAULT_LIMIT = 200000          # context window, tokens; override with STRAIN_CONTEXT_LIMIT
 TAIL_BYTES = 262144             # how much of the transcript tail to scan for the last usage
@@ -268,6 +268,10 @@ def detect_substrate(payload, cwd=""):
     env = os.environ.get("STRAIN_SUBSTRATE")
     if env:
         return env
+    # 0.7.0: a cloud Cowork task names itself in the environment; its transcript sits
+    # under /root/.claude/projects/, which the path rule below would call claude-code.
+    if os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "remote_cowork":
+        return "cowork-cloud"
     tp = str((payload or {}).get("transcript_path") or "")
     probe = tp + " " + (cwd or "")
     if "local-agent-mode-sessions" in probe or probe.startswith("/sessions/") \
@@ -275,6 +279,10 @@ def detect_substrate(payload, cwd=""):
         return "cowork"
     if "/.claude/projects/" in tp:
         return "claude-code"
+    # 0.7.0: since 2026-09-25 local Cowork hands hooks cwd=/private/var/empty and a
+    # transcript under .../claude-hostloop-plugins/<id>/projects/session/.
+    if re.search(r"[/\\]claude-hostloop-plugins[/\\][^/\\]+[/\\]projects[/\\]session[/\\]", tp):
+        return "cowork"
     return "unknown"
 
 
@@ -290,7 +298,7 @@ def calibration_line(ctx, substrate=""):
     mode = (ctx or {}).get("mode") or "pending"
     def k(n):
         return ("%gM" % (n / 1000000.0)) if n >= 1000000 else ("%.0fk" % (n / 1000.0))
-    return ("strain calibrated: %s · window %s · fill bands %g/%g/%g/%g%% -> "
+    return ("strain calibration: %s · window %s · fill bands %g/%g/%g/%g%% -> "
             "Mid/High/Warning/Danger · signal mode %s"
             % (substrate or "unknown", k(lim), mid, high, warning, danger, mode))
 

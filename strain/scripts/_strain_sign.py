@@ -4,27 +4,83 @@
     strain-sign.sh --agent ana                          name this session's agent
     strain-sign.sh --agent ana --ledger ./Log.strain    ...and join a project ledger
 
-Why signing exists: one machine, one state dir, more than one agent. The wrap marker
-is a single file, so before 0.5.0 agent A finishing a piece of work would reset agent
-B's live counters at B's next session start -- B's real strain, wiped by someone
-else's finish line. The path cannot tell agents apart (two windows on one project
-look identical to the hooks), so identity is DECLARED: an agent signs after it knows
-who it is, the wrap it later marks carries that signature, and a signed marker resets
-only sessions carrying the same signature. An unsigned marker behaves exactly as
-before -- signing is opt-in, one command, and only matters once a second agent shows
-up.
+Why signing exists: one machine, one state dir, more than one agent. The path cannot
+tell agents apart (two windows on one project look identical to the hooks), so
+identity is DECLARED: an agent signs after it knows who it is. Signing is opt-in, one
+command, and only matters once a second agent or a second session shows up.
 
 The ledger is the optional account book that comes with signing: an append-only JSONL
 file (suggest `Log.strain` at the project root, gitignored) that receives one
-`boot-sign` row now and one `wrap` row when this session marks its wrap. It records
+`boot-sign` row now and one `wrap` row when this session stamps its wrap. It records
 the project's chain of sessions -- who worked, when, wrapped how -- without ever
 inheriting counters across sessions (one session, one measurement, unchanged).
+
+0.7.0 PREVIOUS SESSION REPORT: the FIRST sign of a session with a ledger reads the
+newest EARLIER session of the same agent in that ledger and prints one plain line --
+its tool calls, compactions, errors escaped / caught, whether it wrapped (and when),
+and whether it kept working after the wrap. Read only: nothing is carried over.
 """
-import argparse, os, sys
+import argparse, os, re, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (state_dir, session_path, load, save, now_iso,
-                            resolve_sid, ledger_append, load_ledgers, save_ledgers)
+                            resolve_sid, ledger_append_why, load_ledgers, save_ledgers,
+                            ledger_rows, signals_of)
+
+
+def _when(ts):
+    """"MM-DD HH:MM" in this machine's local time: parse, convert, then format (slicing
+    the string printed a UTC time as if it were local)."""
+    from datetime import datetime
+    s = str(ts or "")
+    try:
+        t = s.replace("Z", "+00:00")
+        m = re.match(r"^(.*\d\d:\d\d:\d\d(?:\.\d+)?)([+-]\d\d)(\d\d)$", t)
+        if m:
+            t = "%s%s:%s" % m.groups()
+        dt = datetime.fromisoformat(t)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone()
+        return dt.strftime("%m-%d %H:%M")
+    except Exception:
+        return s[5:10] + " " + s[11:16] if re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d", s) else s
+
+
+def previous_session_report(sdir, rows, agent, sid):
+    """One plain line about the newest EARLIER session of the same agent in this ledger."""
+    pred = ""
+    for r in rows:
+        if (r.get("type") == "boot-sign" and str(r.get("agent") or "") == agent
+                and r.get("session") and r.get("session") != sid):
+            pred = str(r["session"])        # file order == append order: last is newest
+    if not pred:
+        return "no earlier session — first session of %s in this ledger" % agent
+    pst = load(session_path(sdir, pred))
+    parts = []
+    if pst:
+        sig = signals_of(pst)
+        comp = int(pst.get("compactions", 0) or 0)
+        parts.append("%d tool calls" % int(pst.get("tick", 0) or 0))
+        parts.append("%d compaction%s" % (comp, "" if comp == 1 else "s"))
+        parts.append("errors %d escaped, %d caught"
+                     % (sum(1 for x in sig if x.get("escaped")),
+                        sum(1 for x in sig if not x.get("escaped"))))
+    else:
+        parts.append("its counts are not reachable from here")
+    wraps = [r for r in rows if r.get("type") == "wrap" and str(r.get("session") or "") == pred]
+    if not wraps:
+        parts.append("not wrapped")
+    else:
+        w = wraps[-1]
+        parts.append("wrapped %s%s" % (_when(w.get("ts")),
+                                       " (with known loose ends)"
+                                       if w.get("verdict") in ("WRAPPED-WITH-DEBT",
+                                                               "CLEAN-WITH-DEBT") else ""))
+        if pst and w.get("tick") is not None:
+            after = int(pst.get("tick", 0) or 0) - int(w.get("tick") or 0)
+            if after > 0:
+                parts.append("worked on after the wrap (%d calls), not re-wrapped" % after)
+    return "previous session (%s · %s): %s" % (agent, pred[:8], " · ".join(parts))
 
 # ---- CHAT SURFACE, two registers (0.5.1) ---------------------------------------------
 # stdout is USER-SURFACE: what a person reads -- Owner-form, plain words, no flags,
@@ -80,15 +136,24 @@ def main(argv):
         sys.stderr.write("could not write state to %s\n" % path)
         return 1
 
-    book_note = ""
+    book_note, report, why = "", "", ""
     if ledger:
+        rows = ledger_rows(ledger)
+        if not any(r.get("type") == "boot-sign" and r.get("session") == sid for r in rows):
+            report = previous_session_report(sdir, rows, str(agent), sid)   # first sign only
         row = {"type": "boot-sign", "ts": now_iso(), "session": sid, "agent": agent}
-        if ledger_append(ledger, row):
+        why = ledger_append_why(ledger, row)
+        if not why:
             book_note = " · booked"
             save_ledgers(sdir, agent, ledger)
         else:
             book_note = " · WARNING: the book could not be written"
+            report = ""
     sys.stdout.write("Strain · Owner: %s — signed%s\n" % (agent, book_note))
+    if report:
+        sys.stdout.write(report + "\n")
+    if why:
+        sys.stderr.write("ledger not written: %s\n" % why)
     sys.stderr.write("details: session %s (via %s)%s\n"
                      % (sid[:12], how,
                         (" · ledger %s (via %s)" % (ledger, ledger_how))

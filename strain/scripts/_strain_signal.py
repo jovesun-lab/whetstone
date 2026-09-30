@@ -22,7 +22,7 @@ WHY CAUGHT AND ESCAPED ARE DIFFERENT
 import argparse, json, sys, os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _strain_common import (state_dir, session_path, load, save, blank, now_iso,
+from _strain_common import (state_lock, state_dir, session_path, load, save, blank, now_iso,
                             resolve_sid, signals_of, signal_floor, pattern_note,
                             floor_tier)
 
@@ -40,6 +40,8 @@ def main(argv):
     sdir = state_dir(args.state_dir)
     sid, how = resolve_sid(sdir, args.session)
     path = session_path(sdir, sid)
+    lock = state_lock(path)
+    lock.__enter__()                   # 0.7.0: one read-modify-write at a time
     st = load(path) or blank(sid)
 
     if args.list:
@@ -66,7 +68,9 @@ def main(argv):
     if floor:
         st["last"] = floor_tier(st.get("last", "Healthy"), floor)
     st["updated"] = now_iso()
-    if not save(path, st):
+    saved = save(path, st)
+    lock.__exit__()
+    if not saved:
         sys.stderr.write("could not write state to %s\n" % path)
         return 1
 

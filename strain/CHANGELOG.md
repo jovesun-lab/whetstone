@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.7.0 — 2026-09-30
+
+**A record command that runs, and the proposal says what it knows.** Seven fixes and
+four behaviour changes, ported from the internal edition after they held up there.
+
+Fixes:
+- **The record command works.** The tick printed `bash "$CLAUDE_PLUGIN_ROOT/scripts/strain-level.sh"`;
+  that variable exists only inside the hook process, so in the agent's own shell the
+  command resolved to `/scripts/strain-level.sh` and failed — no Claude Code session could
+  record a tier or an escaped error. The tick now prints the plugin's absolute path, this
+  session's key (`STRAIN_SESSION=…`, never a "most recent" guess) and the state folder,
+  for `strain-level.sh` and `strain-signal.sh`. README and SKILL lose the variable form.
+- **UNMEASURED, never Healthy.** When nothing was measured and nothing else speaks, the
+  proposal is `UNMEASURED`, with the command to feed the host's own reading. (A session on
+  another host read 140% of a wrong window and the proposal said Healthy.)
+- **A fed reading counts, and stays.** `strain-level.sh --ctx-used` stored the host's
+  reading, but the tier ignored it and the next tool call overwrote it. It is now scored,
+  kept until a real measurement or a newer feed, grows only by transcript bytes appended
+  after it (never the whole file), and a compaction or model switch after it voids it.
+- **Parallel tool calls lose no count.** Parallel hooks read the same count and both wrote
+  count+1. Every read-modify-write of a session file now takes a lock (the save was
+  already atomic).
+- **One ruler per session.** The boot line printed the legacy bands (40/60/75/85) while
+  every tick used the caps (50/60/70/74); the boot line now prints the tick's.
+- **Wording.** The tick header names the interval ("host-fired every 10 tool calls"), not
+  a count; the calibration bracket reads "strain calibration:" (it may well say
+  uncalibrated).
+- **A failed ledger append says why** (missing folder, no permission, lock error).
+
+Behaviour changes:
+- **A compaction is stated, never a tier floor.** It used to floor the tier (1 → High,
+  2+ → Warning), reading a freshly compacted, small context as heavily loaded. The tick now
+  says "compaction #N"; the one-time recovery directive stays.
+- **A wrap resets nothing.** The wrap marker used to reset counters at the next session
+  start — including another live session of the same signature, and a session still
+  working in the same full context after its own wrap. `strain-wrap.sh` now records
+  `wrappedAt` / `wrapTick` in this session's state and books a `wrap` row (verdict
+  `WRAPPED` / `WRAPPED-WITH-DEBT`, with tick, compactions, escaped, caught, tier); the tick
+  says when the session wrapped and how many calls ran since. `--status` shows this
+  session's wrap. An old `wrap-marker.json` is ignored.
+- **The previous-session report.** The first sign of a session with a ledger prints one
+  plain line about the newest earlier session of the same agent. Read only.
+- **The engine names two more shells:** `CLAUDE_CODE_ENTRYPOINT=remote_cowork` →
+  `cowork-cloud` (a cloud task's transcript path looked like Claude Code), and the
+  `…/claude-hostloop-plugins/<id>/projects/session/` transcript shape → `cowork`.
+  Labels only; counting was already right. README: what does not survive a cloud session.
+
+Selftest 104 → 128: 24 new checks (each failed on 0.6.0 except six guards), and 16
+existing checks rewritten to the new behaviour — the wrap-reset and signed-marker checks
+(0.5.0) now assert that a wrap resets nothing and touches no other session; the two
+compaction-floor checks assert "stated, no floor"; v3-D / v3-I expect `UNMEASURED`; the
+boot-line check expects the caps; the wrap output reads "wrapped", its ledger verdict
+`WRAPPED`. SKILL's tier table, which still showed the pre-v3 bands, now shows the caps and
+the escaped ladder the code has used since 0.4.
+
 ## 0.6.0 — 2026-09-22
 
 **The feed door: strain on hosts it cannot parse.**
