@@ -18,8 +18,9 @@ reports this one (strain-sign.sh). Work after a stamp makes it stale: the tick s
 import argparse, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _strain_common import (state_dir, session_path, load, save, now_iso,
-                            resolve_sid, ledger_append_why, signals_of, state_lock)
+from _strain_common import (state_dir, session_path, load, save, now_iso, resolve_sid,
+                            resolve_for_write, ledger_append_why, signals_of, state_lock,
+                            why_unsaved)
 
 
 def main(argv):
@@ -33,10 +34,18 @@ def main(argv):
     args, _ = ap.parse_known_args(argv)
 
     sdir = state_dir(args.state_dir)
-    sid, how = resolve_sid(sdir, args.session)
+    if args.status:
+        sid, how = resolve_sid(sdir, args.session)
+        if how.startswith("guessed"):
+            sys.stderr.write("session %s %s\n" % (sid, how))
+    else:
+        # 0.8.0 A7: a wrap stamp goes to the session that wrapped, never a guessed one.
+        sid, how, refusal = resolve_for_write(sdir, args.session, "strain-wrap.sh", argv)
+        if refusal:
+            sys.stderr.write(refusal)
+            return 2
     if not sid:
-        sys.stderr.write("no session to stamp: no --session, no STRAIN_SESSION, and the "
-                         "index knows nothing yet (a hook has to run once first)\n")
+        sys.stderr.write("no session known yet (a hook has to run once first)\n")
         return 2
     path = session_path(sdir, sid)
     with state_lock(path):
@@ -55,7 +64,7 @@ def main(argv):
         st["wrapTick"] = tick
         st["updated"] = ts
         if not save(path, st):
-            sys.stderr.write("could not write state to %s\n" % path)
+            sys.stderr.write("could not write state: %s\n" % why_unsaved(path))
             return 1
     # a signed session with a ledger also books the stamp -- one row beside its boot-sign
     ledger = str(st.get("ledger") or "")

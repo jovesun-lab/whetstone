@@ -12,6 +12,13 @@ now only records that the session wrapped (strain-wrap.sh); nothing here resets.
     `compact` source           -> count it and SAY it ("compaction #N"); it is never a
                                   tier floor -- the fill after it measures the load
 
+HANDING THE SESSION ID TO THE AGENT'S SHELL (0.8.0)
+    The hook knows this session's id; the agent's shell does not. On a host that offers
+    a hand-over file (Claude Code: CLAUDE_ENV_FILE, written by SessionStart hooks and
+    loaded into every later shell command) this hook appends
+    `export STRAIN_SESSION=<id>`, so a record command lands in THIS session without the
+    agent copying a key. Hosts without one still get the key printed in every tick.
+
 A GENUINELY NEW SESSION STARTS CLEAN
     Each session id gets its own file, so a new conversation begins at zero rather than
     inheriting a number from whatever else was running. This is a deliberate departure
@@ -25,7 +32,8 @@ import argparse, json, os, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (state_dir, session_path, load, save, blank,
-                            now_iso, touch_index, read_payload, log_model, state_lock)
+                            now_iso, touch_index, read_payload, log_model, state_lock,
+                            settle_window, why_unsaved, user_messages_on)
 from _strain_tick import caps_calibration_line
 import _strain_context as ctxmod
 
@@ -41,6 +49,20 @@ def prune(sdir, days=PRUNE_DAYS):
             p = os.path.join(d, name)
             if os.path.isfile(p) and os.path.getmtime(p) < cutoff:
                 os.remove(p)
+    except Exception:
+        pass
+
+
+def hand_over(sid):
+    """0.8.0 A7: append `export STRAIN_SESSION=<id>` to the host's env hand-over file.
+    Never fails the session start; silent where the host offers no such file."""
+    envf = os.environ.get("CLAUDE_ENV_FILE")
+    if not (envf and sid):
+        return
+    try:
+        import shlex
+        with open(envf, "a") as f:
+            f.write("export STRAIN_SESSION=%s\n" % shlex.quote(sid))
     except Exception:
         pass
 
@@ -74,12 +96,19 @@ def main():
         note = ("Context was COMPACTED: compaction #%d this session -- stated, never a "
                 "tier floor. Re-read your goal and handoff." % st["compactions"])
 
-    if not st.get("substrate"):
+    if not st.get("substrate") or st.get("substrate") == "unknown":
         st["substrate"] = ctxmod.detect_substrate(payload, cwd)
     st["updated"] = now_iso()
-    save(path, st)
+    saved = save(path, st)
     lock.__exit__()
-    touch_index(sdir, sid, cwd)
+    hand_over(sid)
+    unsaved = ""
+    if not saved:
+        # 0.8.0 A4: said, never swallowed.
+        unsaved = why_unsaved(path)
+        sys.stderr.write("strain: the session state could not be saved (%s)\n" % unsaved)
+    else:
+        touch_index(sdir, sid, cwd)
     # Log only when the host actually supplied a model. Most SessionStart payloads
     # don't, and a row that says model:"" records nothing -- the real observation
     # happens at tick time, from the transcript (see _strain_tick.py).
@@ -92,7 +121,15 @@ def main():
     # prints (the cap ladder in force), so one session never shows two rulers. The
     # window may still read as the default here: the transcript often does not exist
     # at SessionStart, so the true denominator is first observed at tick time.
-    bits.append(caps_calibration_line(st.get("ctx") or {}, st.get("substrate", "")) + ".")
+    # 0.8.0: the same denominator decision as the tick (one ruler), with its source named.
+    boot_ctx = dict(st.get("ctx") or {})
+    if not boot_ctx.get("limit"):
+        boot_ctx["model"] = st.get("model") or ""
+        boot_ctx, _look = settle_window(boot_ctx, sdir, st.get("substrate", ""))
+    bits.append(caps_calibration_line(boot_ctx, st.get("substrate", "")) + ".")
+    if unsaved:
+        bits.append("The state file could not be saved (%s) -- nothing is recorded for this"
+                    " session until it can be; tell the user." % unsaved)
     if st.get("last", "Healthy") != "Healthy":
         bits.append("Carried strain tier: %s." % st["last"])
     if int(st.get("tick", 0)) > 0:
@@ -100,10 +137,13 @@ def main():
     if note:
         bits.append(note)
     if bits:
-        sys.stdout.write(json.dumps({"hookSpecificOutput": {
+        out = {"hookSpecificOutput": {
             "hookEventName": "SessionStart",
             "additionalContext": "STRAIN STATE -- " + " ".join(bits),
-        }}))
+        }}
+        if unsaved and user_messages_on(st.get("substrate")):
+            out["systemMessage"] = "Strain: state write FAILED -- %s." % unsaved
+        sys.stdout.write(json.dumps(out))
     return 0
 
 

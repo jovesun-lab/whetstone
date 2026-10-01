@@ -17,7 +17,9 @@ import argparse, json, os, shlex, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (TIERS, state_dir, session_path, load, save, blank, now_iso,
                             touch_index, read_payload, log_model, floor_tier,
-                            signals_of, signal_floor, pattern_note, state_lock)
+                            signals_of, signal_floor, pattern_note, state_lock,
+                            settle_window, k_tokens, why_unsaved, unsaved_marker,
+                            user_messages_on, receipt)
 import _strain_context as ctxmod
 
 DEFAULT_N = 10          # tool calls between ticks
@@ -166,13 +168,17 @@ def caps_calibration_line(ctx, substrate=""):
     FORCE (_caps), not the legacy bands -- the display must match the ladder the
     proposal used, or a mis-calibration hides behind an honest-looking line."""
     mid, high, warning, danger, _throttle, invalid = _caps()
-    lim = (ctx or {}).get("limit") or ctxmod.limit()
-    mode = (ctx or {}).get("mode") or "pending"
-    def k(n):
-        return ("%gM" % (n / 1000000.0)) if n >= 1000000 else ("%.0fk" % (n / 1000.0))
-    line = ("strain calibration: %s · window %s · fill caps %g/%g/%g/%g%% -> "
+    ctx = ctx or {}
+    lim, src = ctx.get("limit"), ctx.get("limitSource")
+    if not lim or not src:
+        lim, src = ctxmod.limit_and_source(ctx.get("model") or "")
+    mode = ctx.get("mode") or "pending"
+    # 0.8.0 B1: the window names where it came from -- host-reported, calibrated (and
+    # which record), model hint, default, or an env override. A record ruling the wrong
+    # host would have been visible on its first wrong tick with this one parenthesis.
+    line = ("strain calibration: %s · window %s (%s) · fill caps %g/%g/%g/%g%% -> "
             "Mid/High/Warning/Danger (danger derived) · signal mode %s"
-            % (substrate or "unknown", k(lim), mid, high, warning, danger, mode))
+            % (substrate or "unknown", k_tokens(lim), src, mid, high, warning, danger, mode))
     if invalid:
         line += " · CONFIG INVALID: built-in defaults in force"
     return line
@@ -209,7 +215,8 @@ def carry_feed(fed, fresh, st):
         void = "a model switch since the feed voided it (%s -> %s)" % (fed.get("fedModel"),
                                                                     fresh.get("model"))
     if void:
-        return {"mode": "unmeasured", "voided": True, "tokens": None, "pct": None,
+        return {"mode": "unmeasured", "voided": True, "fedVoid": True, "kind": "stale",
+                "tokens": None, "pct": None, "source": "agent-fed",
                 "why": void + " -- feed a new reading", "limit": fresh.get("limit"),
                 "model": fresh.get("model") or "", "transcript": fresh.get("transcript") or ""}
     out = dict(fed)
@@ -229,6 +236,79 @@ def carry_feed(fed, fresh, st):
     lim = out.get("limit") or fresh.get("limit")
     out["pct"] = round(100.0 * out["tokens"] / float(lim), 1) if lim else None
     return out
+
+
+TIER_SLOT = "<Healthy|Mid|High|Warning|Danger|UNMEASURED>"
+
+
+def reading_state(ctx):
+    """(kind, why) of a reading that is NOT a usable number, or ("", "") when it is.
+    0.8.0 B3: three kinds, each with its own next step --
+      no source  no log strain can read on this host (and no adapter for it)
+      unusable   a source was read and gave no usable number (no usage lines, a fill
+                 at or past 100%, a window of 0, a log that names another session)
+      stale      a reading voided by a compaction or a model switch"""
+    ctx = ctx or {}
+    mode, pct = ctx.get("mode"), ctx.get("pct")
+    if mode in ("measured", "estimated", "agent-fed") and pct is not None:
+        try:
+            p = float(pct)
+        except Exception:
+            p = -1.0
+        if 0.0 <= p <= 100.0:
+            return "", ""
+        # F6b: a fill past 100% is a broken denominator or a broken count, never a
+        # reading; the used count is still a true LOWER bound.
+        return "unusable", (
+            "fill %s%% is impossible -- at least %s tokens are in use (a lower bound); "
+            "check: the model · the effective window · double counting · the compaction "
+            "boundary" % (pct, "{:,}".format(int(ctx.get("tokens") or 0))))
+    kind = str(ctx.get("kind") or "") or ("stale" if ctx.get("voided") else "no source")
+    return kind, str(ctx.get("why") or "")
+
+
+def procedure(kind, why, st, ctx, sdir):
+    """The next step for an UNMEASURED reading, per kind -- a procedure that ends in a
+    record, not a hint. Host-neutral: no host-only terms."""
+    feed = act_command("strain-level.sh", st, sdir,
+                       "<tier> --ctx-used <tokens> --ctx-source '<where you read it>'"
+                       " --ctx-provenance host-reported|agent-estimated")
+    report = act_command("strain-report.sh", st, sdir, "--note '<what you saw, no paths>'")
+    if kind == "no source":
+        ns = st.get("noSource") if isinstance(st.get("noSource"), dict) else {}
+        if ns.get("checked"):
+            return (" No context measurement on this host (no source; checked: %s). Counting"
+                    " behaviour only -- feed a number if the host starts showing one: `%s`."
+                    % (ns["checked"], feed))
+        return (" No context measurement on this host -- UNMEASURED · no source (%s). UNMEASURED"
+                " is not Healthy. Look for the number your host keeps: a session or usage log,"
+                " a status or usage command, a usage API, the host's settings or status pane."
+                " Then end with ONE record: a feed `%s`, or `%s`. This line repeats until one"
+                " exists." % (why or "no log strain can read",
+                              feed, act_command("strain-level.sh", st, sdir,
+                                                "UNMEASURED --no-source --checked"
+                                                " '<the places you looked>'")))
+    if kind == "unusable":
+        if why.startswith("fill "):
+            return (" NOT MEASURED -- UNMEASURED · unusable: %s. A fill past 100%% means"
+                    " strain's arithmetic is off, not your session: tell the user, and offer"
+                    " a bug report they send by hand (nothing is sent automatically): `%s`."
+                    " Meanwhile feed the host's own number if it shows one: `%s`."
+                    % (why, report, feed))
+        return (" NOT MEASURED -- UNMEASURED · unusable: %s. Read the number from your host's"
+                " own interfaces (a status or usage command, its usage pane, its log) and"
+                " feed it with its provenance: `%s`. If the number lives in a durable log,"
+                " draft an adapter proposal -- where the log is, which fields carry the"
+                " usage, one redacted sample line -- with `%s`; never edit the installed"
+                " plugin." % (why, feed, report))
+    if kind == "stale":
+        if ctx.get("fedVoid") or ctx.get("source") == "agent-fed":
+            return (" NOT MEASURED -- UNMEASURED · stale: %s: `%s`." % (why, feed))
+        if ctx.get("source") in ("codex-rollout", "claude-transcript"):
+            return (" NOT MEASURED -- UNMEASURED · stale: %s. Nothing to do: this host"
+                    " measures itself, and the next request brings a fresh reading." % why)
+        return " NOT MEASURED -- UNMEASURED · stale: %s." % why
+    return ""
 
 
 def act_command(script, st, sdir, args):
@@ -260,12 +340,9 @@ def wrap_line(st):
 def build_directive(n, st, ctx, substrate="", sdir=""):
     bits = []
     ctx_line = describe_ctx(ctx)
+    kind, why = reading_state(ctx)
     if ctx_line:
         bits.append(" MEASURED: %s." % ctx_line)
-    else:
-        bits.append(" No context measurement on this host%s -- count behaviour, and say so"
-                    " rather than quoting a number you did not measure."
-                    % ((" (%s)" % ctx["why"]) if (ctx or {}).get("why") else ""))
     if int(st.get("compactions", 0)) > 0:
         bits.append(" Context has been COMPACTED: compaction #%d this session -- stated,"
                     " never a tier floor." % int(st["compactions"]))
@@ -283,13 +360,16 @@ def build_directive(n, st, ctx, substrate="", sdir=""):
         st["recovery_announced"] = comp
     if directives:
         bits.append(" " + " ".join(directives))
-    if proposed == "UNMEASURED":
-        bits.append(" NOT MEASURED -- UNMEASURED is not Healthy. If the host shows its own"
-                    " usage, FEED it: `%s` -- the tier is then scored from that number"
-                    " (labelled agent-fed); otherwise say plainly that you are counting"
-                    " behaviour only."
-                    % act_command("strain-level.sh", st, sdir,
-                                  "<tier> --ctx-used <tokens> --ctx-source '<where you read it>'"))
+    if kind:
+        bits.append(procedure(kind, why, st, ctx, sdir))
+    if st.pop("_legacyNote", None):
+        bits.append(" NOTE: an old calibration record (calibration.json) has no model, so it"
+                    " rules no session -- re-record the window per product and model:"
+                    " strain-calibrate.sh --product <product> --model <model> --window <tokens>"
+                    " --basis nominal|runtime --source <where>.")
+    slot = proposed
+    if proposed == "UNMEASURED" and kind:
+        slot = "UNMEASURED · %s" % kind
     carried = st.get("last", "Healthy")
     decay = ""
     try:
@@ -311,6 +391,8 @@ def build_directive(n, st, ctx, substrate="", sdir=""):
             " the MAIN is GOAL DRIFT -- surface it as a note in your reply; it never"
             " moves the tier (self-reported evidence does not floor)."
             " STRAIN_DRIFT_GLANCE=off drops this line.")
+    st["_proposed"] = proposed
+    st["_kind"], st["_why"] = kind, why
     return (
         "\U0001FA7A STRAIN TICK (host-fired every %d tool call%s)."
         " PROPOSED TIER: %s (%s); carried: %s.%s%s%s"
@@ -323,12 +405,31 @@ def build_directive(n, st, ctx, substrate="", sdir=""):
         " because ticks accumulated or because the previous check was high -- fill and"
         " fresh signals are the only ladders. An unrecorded tier is how this reading"
         " silently stays at its first value.%s [%s]"
-        % (n, "" if n == 1 else "s", proposed, basis, carried, decay, "".join(bits),
+        % (n, "" if n == 1 else "s", slot, basis, carried, decay, "".join(bits),
            wrap_line(st),
-           act_command("strain-level.sh", st, sdir, "<Healthy|Mid|High|Warning|Danger>"),
+           act_command("strain-level.sh", st, sdir, TIER_SLOT),
            act_command("strain-signal.sh", st, sdir, "<kind> --caught|--escaped"), glance,
            caps_calibration_line(ctx, substrate or st.get("substrate", "")))
     )
+
+
+def user_message(st, ctx, path, fire):
+    """0.8.0 B4: the line the HOST shows the user (Claude Code `systemMessage`), or "".
+    The receipt once per session; a reading that has just become UNMEASURED."""
+    if not fire or not user_messages_on(st.get("substrate")):
+        return ""
+    out = []
+    if not st.get("receiptShown"):
+        out.append(receipt(st, "", path, "ledger joined" if st.get("ledger") else "no ledger"))
+        st["receiptShown"] = now_iso()
+    proposed = st.get("_proposed")
+    if proposed == "UNMEASURED" and st.get("lastProposal") != "UNMEASURED":
+        out.append("Strain: this session's context is not measured right now (%s%s)."
+                   % (st.get("_kind") or "no reading",
+                      (": " + st["_why"]) if st.get("_why") else ""))
+    if proposed:
+        st["lastProposal"] = proposed
+    return " ".join(out)
 
 
 def main():
@@ -352,25 +453,30 @@ def main():
     if cwd:
         st["cwd"] = cwd
     st["tick"] = int(st.get("tick", 0)) + 1
+    # 0.8.0: "unknown" is re-asked -- a session that began before its host had an
+    # adapter (a Codex session started on 0.7.0) is recognised once the adapter exists.
+    if not st.get("substrate") or st.get("substrate") == "unknown":
+        st["substrate"] = ctxmod.detect_substrate(payload, cwd)
 
     # Context is re-read every tick (a bounded tail scan); the baseline is read once and
     # then carried, because what the boot cost cannot change later in the session.
-    # 0.6.0: a valid calibration record (strain-calibrate.sh) sets the denominator
-    # before the engine measures -- env override still wins inside apply_calibration.
-    from _strain_common import apply_calibration
-    apply_calibration(sdir)
     prev_ctx = st.get("ctx") if isinstance(st.get("ctx"), dict) else {}
-    ctx = ctxmod.measure(payload, sid, known_baseline=prev_ctx.get("baseline"))
-    # 0.7.0: measured > agent-fed (+ delta since its anchor) > byte estimate. A fed or
-    # voided reading stands until a real measurement or a newer feed replaces it.
+    ctx = ctxmod.measure(payload, sid, known_baseline=prev_ctx.get("baseline"), prev=prev_ctx)
+    # 0.7.0: measured > agent-fed (+ delta since its anchor) > byte estimate. A fed
+    # reading stands until a real measurement or a newer feed replaces it; a fed reading
+    # that a compaction voided stays voided until a new feed (0.8.0: only a FED void is
+    # carried -- a host that measures itself re-measures on its own).
     if ctx.get("mode") != "measured":
         if prev_ctx.get("mode") == "agent-fed":
             ctx = carry_feed(prev_ctx, ctx, st)
-        elif prev_ctx.get("mode") == "unmeasured" and prev_ctx.get("voided"):
-            ctx = dict(prev_ctx, limit=ctx.get("limit"))
+        elif prev_ctx.get("mode") == "unmeasured" and prev_ctx.get("fedVoid"):
+            ctx = dict(prev_ctx)
+    # 0.8.0 A1: ONE denominator decision, after measuring (the model is known by now).
+    ctx, look = settle_window(ctx, sdir, st.get("substrate", ""))
     st["ctx"] = ctx
-    if not st.get("substrate"):
-        st["substrate"] = ctxmod.detect_substrate(payload, cwd)
+    if look.get("legacyNoModel") and not st.get("legacyNoted"):
+        st["legacyNoted"] = now_iso()
+        st["_legacyNote"] = True
 
     # The model comes from the transcript tail, not the hook payload -- SessionStart
     # fires before the transcript exists and its payload usually omits the model, so the
@@ -387,15 +493,57 @@ def main():
     # directive by mutating st (recovery_announced), and that mutation must persist.
     fire = N > 0 and st["tick"] % N == 0
     directive = build_directive(N, st, ctx, st.get("substrate", ""), sdir) if fire else None
-    save(path, st)
+    if st.get("_legacyNote") and not fire:
+        st.pop("legacyNoted", None)        # not said yet -- say it at the next firing tick
+    st.pop("_legacyNote", None)
+    shown = user_message(st, ctx, path, fire)
+    for k in ("_proposed", "_kind", "_why"):
+        st.pop(k, None)
+    saved = save(path, st)
     lock.__exit__()
-    touch_index(sdir, sid, cwd)
 
+    # 0.8.0 A4: a save that fails is SAID -- once, on stderr and to the agent (and to the
+    # user where the host shows hook messages); the regular directive is held back,
+    # because a counter that cannot be saved is frozen and would fire on every call.
+    marker = unsaved_marker(sdir, sid)
+    if not saved:
+        why = why_unsaved(path)
+        sys.stderr.write("strain: this reading could not be saved (%s)\n" % why)
+        first = not os.path.exists(marker)
+        try:
+            with open(marker, "w") as f:
+                f.write(why)
+        except Exception:
+            pass
+        if first:
+            out = {"hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": "\U0001FA7A STRAIN STATE NOT SAVED -- this reading could"
+                " not be saved (%s); nothing is recorded for this session until it can be."
+                " Tell the user." % why}}
+            if user_messages_on(st.get("substrate")):
+                out["systemMessage"] = "Strain: state write FAILED -- %s." % why
+            sys.stdout.write(json.dumps(out))
+        return 0
+
+    touch_index(sdir, sid, cwd)
     if fire:
-        sys.stdout.write(json.dumps({"hookSpecificOutput": {
+        if os.path.exists(marker):
+            try:
+                with open(marker) as f:
+                    gap = f.read().strip()
+                os.remove(marker)
+            except Exception:
+                gap = ""
+            directive += (" NOTE: earlier readings could not be saved (%s); the counts"
+                          " above miss them." % (gap or "reason not recorded"))
+        out = {"hookSpecificOutput": {
             "hookEventName": "PostToolUse",
             "additionalContext": directive,
-        }}))
+        }}
+        if shown:
+            out["systemMessage"] = shown
+        sys.stdout.write(json.dumps(out))
     return 0
 
 

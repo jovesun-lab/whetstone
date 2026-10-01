@@ -51,11 +51,12 @@ Two inputs, and they are not equally strong.
 
 ### Context occupancy — measured, when the host allows it
 
-Some hosts publish a per-session transcript carrying token usage. Where that exists, the
-context reading is a real number, not an impression:
+Some hosts keep a per-session log carrying token usage (Claude Code and Codex do; strain
+reads both). Where that exists, the context reading is a real number, not an impression:
 
-- **current** = the input side of the most recent turn (`input + cache_read +
-  cache_creation` — cached tokens are still context the model is carrying)
+- **current** = the input side of the most recent request, in that host's own terms —
+  cached tokens are still context the model is carrying (on Claude the cached parts are
+  separate fields that add up; on Codex they are already inside the input count)
 - **baseline** = the same sum on the first turn: what the boot alone cost before any work
   happened. System prompt, tool schemas, project instructions, skills. It is the floor the
   session can never get back under, and it is usually larger than people expect.
@@ -108,8 +109,23 @@ the tier; your job is to confirm it or adjust it with what the counters cannot s
   Warning. A burst usually shares one root cause (a capability gap), not exhaustion.
 - **Combination:** fill already at Warning/Danger **and** 3+ escaped → Danger.
 - **UNMEASURED** (0.7.0): Line A abstains and Line B says nothing → the proposal is
-  `UNMEASURED`, never Healthy. Say you are counting behaviour only, and feed the host's
-  own reading if it shows one (`strain-level.sh <tier> --ctx-used <n> --ctx-source "<where>"`).
+  `UNMEASURED`, never Healthy. Since 0.8.0 it names its kind, and each kind has a next
+  step that ends in a record — follow it, do not stop at reporting UNMEASURED:
+  - `no source` — no log strain can read. Look where hosts keep usage (a session or usage
+    log, a status or usage command, a usage API, the host's settings or status pane), then
+    record ONE of: a feed (`strain-level.sh <tier> --ctx-used <n> --ctx-source "<where>"
+    --ctx-provenance host-reported|agent-estimated`) or
+    `strain-level.sh UNMEASURED --no-source --checked "<the places you looked>"`. "My
+    reader can't read it" is not "the host has no number" — look first.
+  - `unusable` — a source was read but gave no usable number. Read the host's own number
+    and feed it with its provenance. A fill past 100% means strain's arithmetic is off:
+    tell the user, quote the used count as a lower bound, and offer a bug report they send
+    by hand (`strain-report.sh --note "<what you saw, no paths>"`). If the number lives in
+    a durable log, draft an adapter proposal the same way — never patch the installed
+    plugin.
+  - `stale` — a compaction or a model switch came after the last reading. A host that
+    measures itself re-measures at the next request; a fed number needs a new feed.
+  With nothing to feed, record exactly that: `strain-level.sh UNMEASURED`.
 
 | Tier | Fill cap | Also reached by | What it means |
 |---|---|---|---|
@@ -147,10 +163,12 @@ Match the shape to the tier. The point is that the user can act without asking f
 Then **record it**, so the next tick carries it forward instead of starting over:
 
 ```
-bash <strain>/scripts/strain-level.sh <Healthy|Mid|High|Warning|Danger>
+bash <strain>/scripts/strain-level.sh <Healthy|Mid|High|Warning|Danger|UNMEASURED>
 ```
 
-(Again: copy the filled command from the tick line.)
+(Again: copy the filled command from the tick line. A record command needs this
+session's key — the printed one carries it; without a key strain refuses and lists the
+candidate sessions rather than guessing which one you meant.)
 
 An unrecorded tier is how this reading silently sits at its first value forever while
 every check around it runs correctly.
@@ -176,6 +194,11 @@ session will work the same project:
 bash <strain>/scripts/strain-sign.sh --agent <your-name> [--ledger ./Log.strain]
 ```
 
+The FIRST sign of a session prints a one-line **receipt** — host, session, where the
+reading comes from and when, its mode, the window and where that came from, whether the
+state file and the ledger can be written. **Relay it to the user verbatim** (on Claude
+Code the hook also shows it to them itself). `strain-sign.sh --receipt` reprints it.
+
 With a ledger (an append-only account book: boot-sign and wrap rows), the FIRST sign of a
 session also reports the previous session of the same agent — its tool calls,
 compactions, errors escaped and caught, whether it wrapped and whether it kept working
@@ -195,19 +218,36 @@ Strain says *when* to hand off. It does not do the handing off. Its companion fo
 cleanest source for the behavioural counts above: one main goal anchor, every other task
 tagged. If you use both, strain reads what throughline already records.
 
+## Which session, and is strain even here?
+
+- **A record needs this session's key.** The tick prints it into every command
+  (`STRAIN_SESSION=…`); some hosts also hand it to your shell (Claude Code through its
+  environment hand-over, Codex as `CODEX_THREAD_ID`). Without a key a record is refused —
+  pick your session from the list it prints; never copy a key from an older session.
+- **Look before saying strain is missing.** Before you tell anyone strain is not
+  installed or not running, check: is there a state folder (`~/.local/state/strain`, or
+  `STRAIN_STATE_DIR`) with a file for this session under `sessions/`? Does
+  `strain-sign.sh --receipt` print a receipt? Your host's own plugin listing is a third
+  check (for example `claude plugin list` on Claude Code, or Codex's plugin folder) — but
+  use what your host actually has; a command from another host proves nothing. A tick
+  that has not arrived yet is not proof either: ticks fire every N tool calls.
+
 ## Honest limits
 
 - **Hooks are per-host.** Where they exist, the check fires whether or not the agent
   remembers. Where they do not, it is a discipline the agent has to keep — weaker, and
   worth naming out loud rather than papering over. On a hook-less host, adopt the
   manual cadence yourself: run the check every ~10 tool calls or at each milestone.
-- **Context auto-parsing knows one host's transcript shape** (Claude Code's). On other
+- **Context auto-parsing knows two hosts' logs** (Claude Code's and Codex's). On other
   hosts strain runs in counted mode even when the host shows its numbers on screen —
-  in that case YOU are the adapter: record the window once
-  (`strain-calibrate.sh --window <n> --basis nominal|runtime --source "<where>"`) and
-  feed the usage at recording time (`strain-level.sh <tier> --ctx-used <n>
-  --ctx-source "<where>"`). A fed reading is labelled agent-fed with its source —
-  never report it as something strain measured itself.
+  in that case YOU are the adapter: record the window once, for your product and model
+  (`strain-calibrate.sh --product <p> --model <m> --window <n> --basis nominal|runtime
+  --source "<where>"`), and feed the usage at recording time (`strain-level.sh <tier>
+  --ctx-used <n> --ctx-source "<where>"`). A fed reading is labelled agent-fed with its
+  source — never report it as something strain measured itself.
+- **Record commands write outside the project** (`~/.local/state/strain`). A sandboxed
+  host may ask for permission: ask the user, do not escalate on your own — or set
+  `STRAIN_STATE_DIR` to a folder inside the project.
 - **Thresholds are guesses** until you retune them. They came from one agent-and-user pair
   over a long run; yours will differ.
 - **The soft signals are judgement calls.** Counting them honestly is the whole job; a

@@ -23,8 +23,8 @@ import argparse, json, sys, os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (state_lock, state_dir, session_path, load, save, blank, now_iso,
-                            resolve_sid, signals_of, signal_floor, pattern_note,
-                            floor_tier)
+                            resolve_sid, resolve_for_write, signals_of, signal_floor,
+                            pattern_note, floor_tier, why_unsaved)
 
 
 def main(argv):
@@ -38,20 +38,32 @@ def main(argv):
     args, _ = ap.parse_known_args(argv)
 
     sdir = state_dir(args.state_dir)
-    sid, how = resolve_sid(sdir, args.session)
+    if args.list:
+        sid, how = resolve_sid(sdir, args.session)
+        if how.startswith("guessed"):
+            sys.stderr.write("session %s %s\n" % (sid, how))
+    else:
+        # 0.8.0 A7: a signal floors a tier -- it must land in the session that made it.
+        sid, how, refusal = resolve_for_write(sdir, args.session, "strain-signal.sh", argv)
+        if refusal:
+            sys.stderr.write(refusal)
+            return 2
     path = session_path(sdir, sid)
     lock = state_lock(path)
     lock.__enter__()                   # 0.7.0: one read-modify-write at a time
     st = load(path) or blank(sid)
 
     if args.list:
+        lock.__exit__()
         sys.stdout.write(json.dumps(signals_of(st), indent=1) + "\n")
         return 0
 
     if not args.kind:
+        lock.__exit__()
         sys.stderr.write("usage: strain-signal.sh <kind> --caught|--escaped | --list\n")
         return 2
     if args.caught == args.escaped:
+        lock.__exit__()
         # Force the caller to say which it was: the distinction IS the feature, and a
         # default would quietly erase it.
         sys.stderr.write("say whether it escaped: --caught (fixed pre-delivery) or"
@@ -71,7 +83,7 @@ def main(argv):
     saved = save(path, st)
     lock.__exit__()
     if not saved:
-        sys.stderr.write("could not write state to %s\n" % path)
+        sys.stderr.write("could not write state: %s\n" % why_unsaved(path))
         return 1
 
     bits = ["recorded %s signal '%s' for session %s (resolved by %s)"

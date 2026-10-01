@@ -27,9 +27,21 @@ def check(name, cond, detail=""):
                              "" if cond else ("  <- " + str(detail))))
 
 
+# 0.8.0: the host variables that name a session are stripped from every child run, so a
+# check never depends on the shell the selftest happens to run in (a Claude Code or Codex
+# shell carries its own session id, and 0.8.0 treats those as identity sources).
+HOST_VARS = ("STRAIN_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_ENV_FILE",
+             "STRAIN_SUBSTRATE", "CLAUDE_CODE_ENTRYPOINT", "STRAIN_CONTEXT_LIMIT",
+             "STRAIN_STATE_DIR", "XDG_STATE_HOME", "CODEX_HOME")
+CLEAN_ENV = {k: v for k, v in os.environ.items() if k not in HOST_VARS}
+for _k in HOST_VARS:
+    os.environ.pop(_k, None)     # the in-process engine calls see the same clean env
+
+
 def run(script, payload=None, args=(), env=None):
     """Run a hook or CLI script; return (stdout, stderr, returncode)."""
-    e = dict(os.environ)
+    e = dict(CLEAN_ENV)
+    e.setdefault("CODEX_HOME", os.path.join(tempfile.gettempdir(), "strain-selftest-no-codex"))
     e.update(env or {})
     p = subprocess.run([sys.executable, os.path.join(SCRIPTS, script)] + list(args),
                        input=(json.dumps(payload) if payload is not None else ""),
@@ -84,6 +96,526 @@ def model_log(sdir):
         return []
 
 
+# ---- 0.8.0 fixtures --------------------------------------------------------------------
+# Ids are uuid-shaped (they are on every host strain reads): the short-id and candidate
+# list cut ids, and a fixture like "sess-A" cannot show a cut in the wrong place.
+
+def U(n):
+    return "0a8e%04x-0000-4000-8000-%012x" % (n, n)
+
+
+def cc_transcript(tmp, sid, tokens, model="claude-opus-5-5"):
+    """A transcript where Claude Code keeps one: under .../.claude/projects/<project>/."""
+    path = os.path.join(tmp, "home", ".claude", "projects", "proj", sid + ".jsonl")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    make_transcript(path, [(2, 10000, 0), (2, tokens, 0)], model=model)
+    return path
+
+
+def rollout(tmp, sid, events, meta_id=None, name=None):
+    """A Codex rollout log: first line session_meta, then the events, in the shapes
+    read from live rollouts (2026-09-30): turn_context.payload.model,
+    event_msg/token_count with info.last_token_usage.input_tokens (cache already
+    inside) and info.model_context_window, and a `compacted` row."""
+    home = os.path.join(tmp, "codex-home")
+    d = os.path.join(home, "sessions", "2026", "09", "30")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, name or ("rollout-2026-09-30T12-00-00-%s.jsonl" % sid))
+    ts = "2026-09-30T12:00:00.000Z"
+    rows = [{"timestamp": ts, "type": "session_meta",
+             "payload": {"id": meta_id or sid, "session_id": meta_id or sid,
+                         "cwd": "/tmp/cx", "originator": "codex"}}]
+    for e in events:
+        k = e[0]
+        if k == "model":
+            rows.append({"timestamp": ts, "type": "turn_context", "payload": {"model": e[1]}})
+        elif k == "usage":                       # ("usage", input, cached, window[, ts])
+            rows.append({"timestamp": e[4] if len(e) > 4 else ts, "type": "event_msg",
+                         "payload": {"type": "token_count", "info": {
+                             "last_token_usage": {"input_tokens": e[1],
+                                                  "cached_input_tokens": e[2],
+                                                  "output_tokens": 50,
+                                                  "total_tokens": e[1] + 50},
+                             "total_token_usage": {"input_tokens": 9999999},
+                             "model_context_window": e[3]}}})
+        elif k == "compacted":
+            rows.append({"timestamp": ts, "type": "compacted", "payload": {"message": ""}})
+    with open(path, "w") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    return path, home
+
+
+def jl(path, default=None):
+    """json.load that a missing or torn file cannot crash (tests must FAIL, not abort)."""
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def section_080(tmp):
+    import re as _re
+    import threading
+    LVL = os.path.join(SCRIPTS, "strain-level.sh")
+    CC = {"STRAIN_SUBSTRATE": "claude-code"}
+
+    tick_raw = globals()["tick"]
+
+    def tick(*a, **k):
+        """The hook's text as the agent reads it (JSON-decoded: '·' arrives escaped)."""
+        out, err, rc = tick_raw(*a, **k)
+        try:
+            j = json.loads(out)
+            out = j["hookSpecificOutput"]["additionalContext"]
+        except Exception:
+            pass
+        return out, err, rc
+
+    def lvl(sdir, args, env=None):
+        return run("_strain_level.py", None, args, dict({"STRAIN_STATE_DIR": sdir}, **(env or {})))
+
+    def ctx_of(sdir, sid):
+        return state_of(sdir, sid).get("ctx") or {}
+
+    # ---- A1 · a calibration record rules only its own <product> · <model> (0.8.0) --------
+    adir = os.path.join(tmp, "a1")
+    os.makedirs(adir, exist_ok=True)
+    legacy = os.path.join(adir, "calibration.json")
+    with open(legacy, "w") as f:                 # what a Codex session wrote on 0.7.0
+        json.dump({"product": "Codex", "model": "gpt-x-test", "window": 258400,
+                   "basis": "runtime", "source": "host runtime log",
+                   "checkedAt": __import__("time").strftime("%Y-%m-%d")}, f)
+    legacy_bytes = open(legacy, "rb").read()
+    s1 = U(1)
+    out, _, _ = tick(adir, s1, n=1, transcript=cc_transcript(tmp, s1, 104000))
+    check("0.8.0 A1: another host's record never rules a Claude Code session",
+          ctx_of(adir, s1).get("limit") == 1000000 and "window 1M (model hint)" in out,
+          (ctx_of(adir, s1).get("limit"), out[-300:]))
+    s2 = U(2)
+    _, err, rc = run("_strain_calibrate.py", None,
+                     ["--state-dir", adir, "--product", "Claude Code", "--window", "900000",
+                      "--basis", "nominal", "--source", "vendor docs", "--session", s1])
+    check("0.8.0 A1: --model is required and the refusal names the observed model",
+          rc == 2 and "--model" in err and "claude-opus-5-5" in err, (rc, err))
+    for spelling in ("claude code", "Claude-Code"):
+        _, err, rc = run("_strain_calibrate.py", None,
+                         ["--state-dir", adir, "--product", spelling,
+                          "--model", "Claude-Opus-5-5", "--window", "900000",
+                          "--basis", "nominal", "--source", "vendor docs"])
+    reg = jl(os.path.join(adir, "models.json"), {})
+    check("0.8.0 A1: product spellings collapse to one key (models.json)",
+          rc == 0 and list(reg) == ["Claude Code · claude-opus-5-5"], (rc, err, reg))
+    check("0.8.0 A1: calibrate leaves the old calibration.json byte-identical",
+          open(legacy, "rb").read() == legacy_bytes)
+    out, _, _ = tick(adir, s1, n=1, transcript=cc_transcript(tmp, s1, 104000))
+    check("0.8.0 A1/B1: the matching record rules, and the bracket names it",
+          ctx_of(adir, s1).get("limit") == 900000
+          and "window 900k (calibrated: Claude Code · claude-opus-5-5)" in out,
+          (ctx_of(adir, s1), out[-300:]))
+    out, err, rc = lvl(adir, ["--session", s1, "--ctx-used", "90000", "--ctx-source", "host pane"])
+    check("0.8.0 A1: a feed divides by the matching record, not another host's",
+          rc == 0 and "fill 10.0%" in out, (rc, out, err))
+    # Cowork's own record (Sonnet 5 compacts at 500K there) never rules Claude Code
+    run("_strain_calibrate.py", None,
+        ["--state-dir", adir, "--product", "Cowork", "--model", "claude-sonnet-5",
+         "--window", "400000", "--basis", "runtime", "--source", "host"])
+    s3 = U(3)
+    out, _, _ = tick(adir, s3, n=1, transcript=cc_transcript(tmp, s3, 100000, "claude-sonnet-5"))
+    check("0.8.0 A1: a Cowork record does not rule a Claude Code session on the same model",
+          ctx_of(adir, s3).get("limit") == 500000, ctx_of(adir, s3))
+    s4 = U(4)
+    cw = os.path.join(tmp, "local-agent-mode-sessions", "x", s4 + ".jsonl")
+    os.makedirs(os.path.dirname(cw), exist_ok=True)
+    make_transcript(cw, [(2, 10000, 0), (2, 100000, 0)], model="claude-sonnet-5")
+    tick(adir, s4, n=1, transcript=cw)
+    check("0.8.0 A1: ... and does rule a Cowork session on it",
+          ctx_of(adir, s4).get("limit") == 400000, ctx_of(adir, s4))
+    # unrecognised hosts: model alone, one candidate only; a known product's record never
+    s5 = U(5)
+    run("_strain_calibrate.py", None,
+        ["--state-dir", adir, "--product", "Example Host", "--model", "ex-model-1",
+         "--window", "300000", "--basis", "runtime", "--source", "host"])
+    exr = os.path.join(tmp, "ex", s5 + ".jsonl")
+    os.makedirs(os.path.dirname(exr), exist_ok=True)
+    make_transcript(exr, [(2, 10000, 0), (2, 30000, 0)], model="ex-model-1")
+    tick(adir, s5, n=1, transcript=exr)
+    check("0.8.0 A1: an unrecognised host on a recorded model gets that record",
+          ctx_of(adir, s5).get("limit") == 300000, ctx_of(adir, s5))
+    bdir2 = os.path.join(tmp, "a1b")
+    for prod in ("Host One", "Host Two"):
+        run("_strain_calibrate.py", None,
+            ["--state-dir", bdir2, "--product", prod, "--model", "m-" + prod[-3:].lower(),
+             "--window", "300000", "--basis", "runtime", "--source", "host"])
+    s6 = U(6)
+    out, _, _ = tick(bdir2, s6, n=1)
+    check("0.8.0 A1: model unknown + two candidates -> none applied, the bracket says why",
+          ctx_of(bdir2, s6).get("limit") == 200000 and "2 candidates" in out,
+          (ctx_of(bdir2, s6), out[-300:]))
+    # a legacy record WITHOUT a model is never applied, and the tick says so once
+    ldir = os.path.join(tmp, "a1l")
+    os.makedirs(ldir, exist_ok=True)
+    with open(os.path.join(ldir, "calibration.json"), "w") as f:
+        json.dump({"product": "Some Host", "model": "", "window": 300000, "basis": "runtime",
+                   "source": "x", "checkedAt": __import__("time").strftime("%Y-%m-%d")}, f)
+    s7 = U(7)
+    o1, _, _ = tick(ldir, s7, n=1)
+    o2, _, _ = tick(ldir, s7, n=1)
+    check("0.8.0 A1: an old record with no model is never applied, said once",
+          ctx_of(ldir, s7).get("limit") == 200000 and "has no model" in o1
+          and "has no model" not in o2, (o1[-400:], o2[-200:]))
+    # parallel calibrations keep both entries
+    pdir = os.path.join(tmp, "a1p")
+    lost = 0
+    for rnd in range(3):
+        ps = [subprocess.Popen([sys.executable, os.path.join(SCRIPTS, "_strain_calibrate.py"),
+                                "--state-dir", pdir, "--product", "Host %d" % i,
+                                "--model", "m%d-%d" % (rnd, i), "--window", "1000",
+                                "--basis", "runtime", "--source", "s"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=CLEAN_ENV)
+              for i in range(6)]
+        [p.wait() for p in ps]
+    n_entries = len(jl(os.path.join(pdir, "models.json"), {}))
+    check("0.8.0 A1: 18 calibrations in parallel keep 18 entries", n_entries == 18, n_entries)
+
+    # ---- A2 · UNMEASURED is recordable --------------------------------------------------
+    udir = os.path.join(tmp, "a2")
+    su = U(8)
+    out, _, _ = tick(udir, su, n=1)
+    check("0.8.0 A2: the record command offers UNMEASURED",
+          "UNMEASURED>" in out or "|UNMEASURED" in out, out[-900:])
+    _, err, rc = lvl(udir, ["UNMEASURED", "--session", su])
+    out, _, _ = tick(udir, su, n=1)
+    check("0.8.0 A2: UNMEASURED is recorded and carried",
+          rc == 0 and "carried: UNMEASURED" in out, (rc, err, out[:300]))
+
+    # ---- A3 · the hooks.json description ------------------------------------------------
+    hj = json.load(open(os.path.join(os.path.dirname(HERE), "hooks", "hooks.json")))
+    check("0.8.0 A3: hooks.json no longer calls a compaction an escalation",
+          "escalation" not in hj.get("description", "")
+          and "never a tier floor" in hj.get("description", ""), hj.get("description"))
+
+    # ---- A4 · a failed save is said, not swallowed ---------------------------------------
+    rdir = os.path.join(tmp, "a4")
+    sr = U(9)
+    tick(rdir, sr, n=1000)
+    sess = os.path.join(rdir, "sessions")
+    os.chmod(sess, 0o555)
+    os.chmod(os.path.join(sess, sr + ".json"), 0o444)
+    try:
+        o1, e1, rc1 = tick(rdir, sr, n=1)
+        o2, e2, rc2 = tick(rdir, sr, n=1)
+        ob, _, _ = start(rdir, sr, source="resume")
+    finally:
+        os.chmod(sess, 0o755)
+        os.chmod(os.path.join(sess, sr + ".json"), 0o644)
+    check("0.8.0 A4: an unwritable state file is said (directive + stderr), exit 0",
+          rc1 == 0 and "could not be saved" in o1 and "could not be saved" in e1, (rc1, o1[:300], e1))
+    check("0.8.0 A4: ... once, not on every call", rc2 == 0 and o2 == "", o2[:200])
+    check("0.8.0 A4: the boot says it too", "could not be saved" in ob, ob[:300])
+    o3, _, _ = tick(rdir, sr, n=1)
+    check("0.8.0 A4: the next saved tick notes the gap",
+          "earlier readings could not be saved" in o3, o3[:400])
+
+    # ---- A6 · Codex as a known host -----------------------------------------------------
+    cdir = os.path.join(tmp, "a6")
+    sc = U(10)
+    path, home = rollout(tmp, sc, [("model", "gpt-x-test"), ("usage", 120000, 100000, 258400),
+                                   ("usage", 129584, 128512, 258400)])
+    CX = {"CODEX_HOME": home}
+    out, _, _ = tick(cdir, sc, n=1, transcript=path, extra_env=CX)
+    c = ctx_of(cdir, sc)
+    check("0.8.0 A6: a Codex rollout is MEASURED -- newest receipt, cache not double-counted",
+          c.get("mode") == "measured" and c.get("tokens") == 129584 and c.get("limit") == 258400
+          and c.get("model") == "gpt-x-test", c)
+    check("0.8.0 A6/B1: the host is named and the window says it came from the host",
+          state_of(cdir, sc).get("substrate") == "codex"
+          and "window 258k (host-reported · Codex)" in out, (state_of(cdir, sc).get("substrate"), out[-300:]))
+    sc2 = U(11)
+    p2, _ = rollout(tmp, sc2, [("model", "gpt-x-test"), ("usage", 50000, 0, 258400)])
+    tick(cdir, sc2, n=1, extra_env=CX)           # no transcript_path: found by id under CODEX_HOME
+    check("0.8.0 A6: found by its session id when the hook names no file",
+          ctx_of(cdir, sc2).get("tokens") == 50000, ctx_of(cdir, sc2))
+    sc3 = U(12)
+    p3, _ = rollout(tmp, sc3, [("usage", 50000, 0, 258400)], meta_id=U(99),
+                    name="rollout-2026-09-30T12-00-00-other.jsonl")
+    tick(cdir, sc3, n=1, transcript=p3, extra_env=CX)
+    check("0.8.0 A6: a log that belongs to another session is never read as this one",
+          ctx_of(cdir, sc3).get("mode") != "measured", ctx_of(cdir, sc3))
+    sc4 = U(13)
+    p4, _ = rollout(tmp, sc4, [("model", "gpt-x-test"), ("usage", 238739, 0, 258400), ("compacted",)])
+    out, _, _ = tick(cdir, sc4, n=1, transcript=p4, extra_env=CX)
+    check("0.8.0 A6/B3: a compaction voids the receipt -> UNMEASURED · stale, host re-measures",
+          "PROPOSED TIER: UNMEASURED · stale" in out and "next request" in out, out[:500])
+    p4, _ = rollout(tmp, sc4, [("model", "gpt-x-test"), ("usage", 238739, 0, 258400), ("compacted",),
+                               ("usage", 0, 0, 258400), ("usage", 47766, 0, 258400)])
+    tick(cdir, sc4, n=1, transcript=p4, extra_env=CX)
+    check("0.8.0 A6: a receipt after the compaction re-measures (a zero receipt is skipped)",
+          ctx_of(cdir, sc4).get("tokens") == 47766, ctx_of(cdir, sc4))
+    sc5 = U(14)
+    p5, _ = rollout(tmp, sc5, [("model", "gpt-x-test"), ("usage", 90000, 0, 258400),
+                               ("model", "gpt-x-mini")])
+    out, _, _ = tick(cdir, sc5, n=1, transcript=p5, extra_env=CX)
+    check("0.8.0 A6: a model switch voids the receipt", "UNMEASURED · stale" in out
+          and "model" in out.split("UNMEASURED · stale", 1)[1][:200], out[:400])
+    sc6 = U(15)
+    p6, _ = rollout(tmp, sc6, [("model", "gpt-x-test"), ("usage", 90000, 0, 0)])
+    out, _, _ = tick(cdir, sc6, n=1, transcript=p6, extra_env=CX)
+    check("0.8.0 A6: window 0 -> UNMEASURED · unusable", "UNMEASURED · unusable" in out, out[:400])
+    sc7 = U(16)
+    p7, _ = rollout(tmp, sc7, [("model", "gpt-x-test"),
+                               ("usage", 77000, 0, 258400, "2026-09-30T08:00:00.000Z")])
+    with open(p7, "a") as f:
+        f.write('{"timestamp":"2026-09-30T12:00:01.000Z","type":"event_msg","payload":{"type":"tok')
+    run("_strain_calibrate.py", None, ["--state-dir", cdir, "--product", "Codex",
+                                        "--model", "gpt-x-test", "--window", "1000000",
+                                        "--basis", "nominal", "--source", "x"])
+    tick(cdir, sc7, n=1, transcript=p7, extra_env=CX)
+    c = ctx_of(cdir, sc7)
+    check("0.8.0 A6: no clock (an old receipt still reads), a torn last line is ignored",
+          c.get("mode") == "measured" and c.get("tokens") == 77000, c)
+    check("0.8.0 D4: the host-reported window beats a calibration record",
+          c.get("limit") == 258400, c)
+
+    # ---- A7 · identity is handed over by the host, never guessed -------------------------
+    idir = os.path.join(tmp, "a7")
+    sa, sb = U(20), U(21)
+    tick(idir, sa, cwd="/tmp/a7-claude")
+    tick(idir, sb, cwd="/tmp/a7-codex")          # newer, another folder
+    for script, args in (("_strain_level.py", ["High"]), ("_strain_signal.py", ["k", "--escaped"]),
+                         ("_strain_sign.py", ["--agent", "ana"]), ("_strain_wrap.py", [])):
+        _, err, rc = run(script, None, args, {"STRAIN_STATE_DIR": idir})
+        check("0.8.0 A7: %s without a key refuses (exit 2) and lists ready commands" % script,
+              rc == 2 and "no session key" in err and "STRAIN_SESSION=" in err, (rc, err[:400]))
+    check("0.8.0 A7: ... and nothing landed in either session",
+          state_of(idir, sa).get("last") == "Healthy" and not state_of(idir, sb).get("signals")
+          and not state_of(idir, sa).get("agent"), (state_of(idir, sa), state_of(idir, sb)))
+    out, err, rc = lvl(idir, ["--get"])
+    check("0.8.0 A7: a read may guess, and says it guessed", rc == 0 and "guessed" in err, (rc, err))
+    _, err, rc = lvl(idir, ["High"], {"STRAIN_SESSION": sa, "CLAUDE_CODE_SESSION_ID": sb})
+    check("0.8.0 A7: sources that disagree -> refuse, naming both",
+          rc == 2 and "disagree" in err and sa in err and sb in err, (rc, err))
+    _, err, rc = lvl(idir, ["High"], {"CLAUDE_CODE_SESSION_ID": sa})
+    check("0.8.0 D6: the undocumented host id alone is a cross-check, not a key -- but it ranks"
+          " its session first", rc == 2 and err.find(sa) != -1
+          and (err.find(sb) == -1 or err.find(sa) < err.find(sb)), (rc, err))
+    _, err, rc = lvl(idir, ["Mid"], {"CODEX_THREAD_ID": sb})
+    check("0.8.0 A7: Codex hands its thread id to the shell -- that is a key",
+          rc == 0 and state_of(idir, sb).get("last") == "Mid", (rc, err))
+    envf = os.path.join(tmp, "a7-env.sh")
+    open(envf, "w").close()
+    start(idir, sa)
+    run("_strain_reset.py", {"session_id": sa, "cwd": "/tmp/a7-claude", "source": "startup",
+                             "hook_event_name": "SessionStart"}, [],
+        {"STRAIN_STATE_DIR": idir, "CLAUDE_ENV_FILE": envf})
+    check("0.8.0 A7: SessionStart hands the id to the agent's shell (CLAUDE_ENV_FILE)",
+          open(envf).read() == "export STRAIN_SESSION=%s\n" % sa, open(envf).read())
+
+    # ---- B3 · UNMEASURED says which kind, and the next step is a procedure ------------------
+    bdir = os.path.join(tmp, "b3")
+    sn = U(30)
+    out, _, _ = tick(bdir, sn, n=1)
+    check("0.8.0 B3: no source -> a checklist ending in one of two records",
+          "PROPOSED TIER: UNMEASURED · no source" in out and "--no-source --checked" in out
+          and "--ctx-used" in out, out[:900])
+    _, err, rc = lvl(bdir, ["--session", sn, "--no-source", "--checked", "status command, settings"])
+    out, _, _ = tick(bdir, sn, n=1)
+    check("0.8.0 B3: once recorded, the checklist stops and the record is shown",
+          rc == 0 and "checked: status command, settings" in out and "--no-source --checked" not in out,
+          (rc, err, out[:600]))
+    so = U(31)
+    out, _, _ = tick(bdir, so, n=1, transcript=cc_transcript(tmp, so, 300000),
+                     extra_env={"STRAIN_CONTEXT_LIMIT": "200000"})
+    check("0.8.0 B3/S1: fill over 100% -> unusable, a lower bound, what to check, a report offer",
+          "UNMEASURED · unusable" in out and "lower bound" in out and "strain-report.sh" in out,
+          out[:900])
+    sf = U(32)
+    tick(bdir, sf, n=1)
+    lvl(bdir, ["--session", sf, "--ctx-used", "50000", "--ctx-source", "host pane",
+               "--ctx-provenance", "host-reported"])
+    check("0.8.0 B3: a feed keeps its provenance",
+          ctx_of(bdir, sf).get("provenance") == "host-reported", ctx_of(bdir, sf))
+    start(bdir, sf, source="compact")
+    out, _, _ = tick(bdir, sf, n=1)
+    check("0.8.0 B3: a stale FED reading asks for a new feed",
+          "UNMEASURED · stale" in out and "feed a new reading" in out, out[:600])
+
+    # ---- D5 · the byte estimate counts only what follows the last compaction ---------------
+    ddir = os.path.join(tmp, "d5")
+    sd = U(40)
+    dp = os.path.join(tmp, "d5.jsonl")
+    with open(dp, "w") as f:
+        f.write(("x" * 99 + "\n") * 400)                                  # 40,000 bytes
+        f.write(json.dumps({"type": "system", "subtype": "compact_boundary"}) + "\n")
+        f.write(("y" * 99 + "\n") * 40)                                   # 4,000 bytes
+    tick(ddir, sd, n=1, transcript=dp)
+    check("0.8.0 D5: the estimate counts bytes after the last compaction marker (4000/4)",
+          ctx_of(ddir, sd).get("mode") == "estimated" and ctx_of(ddir, sd).get("tokens") == 1000,
+          ctx_of(ddir, sd))
+
+    # ---- B4 · the receipt -----------------------------------------------------------------
+    rcd = os.path.join(tmp, "b4")
+    sr2 = U(50)
+    tick(rcd, sr2, n=1000, transcript=cc_transcript(tmp, sr2, 104000))
+    out, err, rc = run("_strain_sign.py", None, ["--agent", "ana", "--session", sr2],
+                       {"STRAIN_STATE_DIR": rcd})
+    check("0.8.0 B4: the first sign prints the receipt in plain words",
+          rc == 0 and "Strain receipt" in out and "host Claude Code" in out
+          and "session %s" % sr2[:8] in out and "reading Claude transcript" in out
+          and "window 1M (model hint)" in out and "state saved" in out
+          and "/" not in out and "--" not in out, (rc, out))
+    out2, _, _ = run("_strain_sign.py", None, ["--agent", "ana", "--session", sr2],
+                     {"STRAIN_STATE_DIR": rcd})
+    out3, _, rc3 = run("_strain_sign.py", None, ["--receipt", "--session", sr2],
+                       {"STRAIN_STATE_DIR": rcd})
+    check("0.8.0 B4: a re-sign does not repeat it; --receipt reprints it any time",
+          "Strain receipt" not in out2 and rc3 == 0 and "Strain receipt" in out3, (out2, out3))
+    os.chmod(os.path.join(rcd, "sessions", sr2 + ".json"), 0o444)
+    os.chmod(os.path.join(rcd, "sessions"), 0o555)
+    try:
+        out4, _, _ = run("_strain_sign.py", None, ["--receipt", "--session", sr2],
+                         {"STRAIN_STATE_DIR": rcd})
+    finally:
+        os.chmod(os.path.join(rcd, "sessions"), 0o755)
+        os.chmod(os.path.join(rcd, "sessions", sr2 + ".json"), 0o644)
+    check("0.8.0 B4: an unwritable state file shows as FAILED", "state write FAILED" in out4, out4)
+    sm = U(51)
+    tp = cc_transcript(tmp, sm, 104000)
+    o1, _, _ = tick_raw(rcd, sm, n=1, transcript=tp, extra_env=CC)
+    o2, _, _ = tick_raw(rcd, sm, n=1, transcript=tp, extra_env=CC)
+    try:
+        m1, m2 = json.loads(o1).get("systemMessage", ""), json.loads(o2).get("systemMessage", "")
+    except Exception:
+        m1 = m2 = ""
+    check("0.8.0 B4: on Claude Code the hook shows the receipt to the user itself, once",
+          "Strain receipt" in m1 and not m2, (m1, m2))
+    sm2 = U(52)
+    plain = os.path.join(tmp, "plain", sm2 + ".jsonl")
+    os.makedirs(os.path.dirname(plain), exist_ok=True)
+    make_transcript(plain, [(2, 10000, 0), (2, 104000, 0)], model="claude-opus-5-5")
+    o3, _, _ = tick_raw(rcd, sm2, n=1, transcript=plain)
+    check("0.8.0 B4: a host strain cannot vouch for gets no user message",
+          "systemMessage" not in o3, o3[:200])
+    open(tp, "w").close()                        # the reading disappears -> a NEW UNMEASURED
+    o4, _, _ = tick_raw(rcd, sm, n=1, transcript=tp, extra_env=CC)
+    try:
+        m4 = json.loads(o4).get("systemMessage", "")
+    except Exception:
+        m4 = ""
+    check("0.8.0 B4: a new UNMEASURED is told to the user by the hook", "not measured" in m4, m4)
+
+    # ---- S1 · a bug report the user sends by hand -----------------------------------------
+    rp = os.path.join(tmp, "s1")
+    sx = U(60)
+    tick(rp, sx, n=1, transcript=cc_transcript(tmp, sx, 300000),
+         extra_env={"STRAIN_CONTEXT_LIMIT": "200000"})
+    out, err, rc = run("_strain_report.py", None,
+                       ["--session", sx, "--note", "seen in %s while session %s ran" % (tmp, sx)],
+                       {"STRAIN_STATE_DIR": rp})
+    reps = [os.path.join(rp, "reports", f) for f in (os.listdir(os.path.join(rp, "reports"))
+                                                     if os.path.isdir(os.path.join(rp, "reports")) else [])]
+    body = open(reps[0]).read() if reps else ""
+    check("0.8.0 S1: strain-report.sh drafts a report and sends nothing",
+          rc == 0 and "nothing was sent" in out and len(reps) == 1 and "/issues/new" in err, (rc, out, err))
+    check("0.8.0 S1: the draft carries the facts and no path or session id",
+          "unusable" in body and "300" in body and tmp not in body and sx not in body
+          and os.path.expanduser("~") not in body, body[:600])
+
+    # ---- S5 · signing takes the session lock ------------------------------------------------
+    kdir = os.path.join(tmp, "s5")
+    sk = U(70)
+    tick(kdir, sk, n=1000)
+    for rnd in range(3):
+        ps = [subprocess.Popen([sys.executable, os.path.join(SCRIPTS, "_strain_tick.py"), "--n", "1000"],
+                               stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, env=dict(CLEAN_ENV, STRAIN_STATE_DIR=kdir),
+                               text=True) for _ in range(12)]
+        sg = subprocess.Popen([sys.executable, os.path.join(SCRIPTS, "_strain_sign.py"),
+                               "--agent", "a%d" % rnd, "--session", sk],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                              env=dict(CLEAN_ENV, STRAIN_STATE_DIR=kdir))
+        for p in ps:
+            p.stdin.write(json.dumps({"session_id": sk, "cwd": "/tmp/proj"}))
+            p.stdin.close()
+        [p.wait() for p in ps]
+        sg.wait()
+    check("0.8.0 S5 (guard): parallel ticks and a sign lose no count",
+          state_of(kdir, sk).get("tick") == 37 and state_of(kdir, sk).get("agent") == "a2",
+          state_of(kdir, sk))
+
+    # ---- B2 · the shared-file guard -------------------------------------------------------
+    # A full scenario; then EVERY file strain wrote must be per-session, or keyed per entry
+    # by session / agent / product · model. A new unkeyed file fails here (the class of the 0.8.0 shared-record bug).
+    gdir = os.path.join(tmp, "b2")
+    sg1, sg2 = U(80), U(81)
+    book = os.path.join(tmp, "b2-proj", "Log.strain")
+    os.makedirs(os.path.dirname(book), exist_ok=True)
+    start(gdir, sg1, model="claude-opus-5-5")
+    tick(gdir, sg1, n=1, transcript=cc_transcript(tmp, sg1, 104000))
+    tick(gdir, sg2, n=1, cwd="/tmp/b2-other")
+    run("_strain_sign.py", None, ["--agent", "ana", "--session", sg1, "--ledger", book],
+        {"STRAIN_STATE_DIR": gdir})
+    lvl(gdir, ["Mid", "--session", sg1])
+    run("_strain_signal.py", None, ["k", "--caught", "--session", sg1], {"STRAIN_STATE_DIR": gdir})
+    run("_strain_calibrate.py", None, ["--state-dir", gdir, "--product", "Claude Code",
+                                        "--model", "claude-opus-5-5", "--window", "1000000",
+                                        "--basis", "nominal", "--source", "x"])
+    lvl(gdir, ["--session", sg2, "--ctx-used", "1000", "--ctx-source", "x"])
+    run("_strain_wrap.py", None, ["--session", sg1], {"STRAIN_STATE_DIR": gdir})
+    run("_strain_report.py", None, ["--session", sg1], {"STRAIN_STATE_DIR": gdir})
+    bad = []
+    for root, _dirs, files in os.walk(gdir):
+        for fn in files:
+            rel = os.path.relpath(os.path.join(root, fn), gdir)
+            full = os.path.join(root, fn)
+            m = _re.match(r"^sessions/([0-9a-f-]+)\.json(\.lock)?$", rel)
+            if m:
+                if not m.group(2) and json.load(open(full)).get("sid") != m.group(1):
+                    bad.append(rel + " (sid inside differs from its name)")
+                continue
+            if _re.match(r"^reports/strain-report-[0-9a-f]{8}-\d{8}-\d{6}\.md$", rel):
+                continue
+            if rel in ("ledgers.json.lock", "models.json.lock"):
+                continue
+            if rel == "index.json":
+                ix = json.load(open(full))
+                if not all(isinstance(v, dict) and v.get("sid") for v in
+                           list((ix.get("by_cwd") or {}).values()) + [ix.get("last") or {}]):
+                    bad.append(rel + " (an entry without its session)")
+                continue
+            if rel == "model-log.jsonl":
+                if not all(json.loads(l).get("session_id") for l in open(full) if l.strip()):
+                    bad.append(rel + " (a row without its session)")
+                continue
+            if rel == "ledgers.json":
+                if not all(isinstance(v, dict) and v.get("ledger") for v in json.load(open(full)).values()):
+                    bad.append(rel + " (an entry without its agent's ledger)")
+                continue
+            if rel == "models.json":
+                for k, v in json.load(open(full)).items():
+                    if k != "%s · %s" % (v.get("product"), v.get("model")):
+                        bad.append(rel + " (entry %r not keyed by its product · model)" % k)
+                continue
+            bad.append(rel + " (not in the declared table -- unkeyed shared file?)")
+    if os.path.isfile(book):
+        for l in open(book):
+            r = json.loads(l)
+            if not (r.get("session") and r.get("agent")):
+                bad.append("Log.strain row without session/agent: %r" % r)
+    check("0.8.0 B2: every file strain writes is per-session or keyed per entry", not bad, bad)
+
+    # ---- S2 / A5 · docs ---------------------------------------------------------------------
+    skill = open(os.path.join(os.path.dirname(HERE), "skills", "strain", "SKILL.md")).read()
+    readme = open(os.path.join(os.path.dirname(HERE), "README.md")).read()
+    check("0.8.0 S2: SKILL says look before saying strain is missing -- host-neutral",
+          "before saying strain is missing" in skill and "--receipt" in skill, "")
+    check("0.8.0 A5: README says where strain writes, per host",
+          "## Where strain writes" in readme and "STRAIN_STATE_DIR" in readme, "")
+    check("0.8.0 A2: SKILL lists UNMEASURED as a recordable tier",
+          "strain-level.sh UNMEASURED" in skill, "")
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="strain-selftest-")
     try:
@@ -133,12 +665,14 @@ def main():
         check("directive carries the recorded tier", "carried: High" in nxt, nxt[:300])
         check("level reports which session it wrote", "sess-D" in err, err)
 
-        # resolution by cwd, with no explicit session
+        # no explicit session: a WRITE refuses and lists candidates (0.8.0 A7) -- a
+        # folder or most-recent guess is how a record lands in another session's file
         out, err, rc = run("_strain_level.py", None, ["Mid"],
                            {"STRAIN_STATE_DIR": sdir, "PWD": "/tmp/projD"})
-        # resolve_sid uses os.getcwd(); the index also stores a most-recent fallback
-        check("level resolves a session without being told", rc == 0 and out == "Mid",
-              (rc, out, err))
+        check("0.8.0 A7 (was: level resolves a session without being told): a keyless write"
+              " refuses and names the candidate",
+              rc == 2 and out == "" and "sess-D" in err
+              and state_of(sdir, "sess-D").get("last") == "High", (rc, out, err))
 
         _, _, rc = run("_strain_level.py", None, ["Sleepy", "--session", "sess-D"],
                        {"STRAIN_STATE_DIR": sdir})
@@ -625,8 +1159,12 @@ def main():
         # agent hands them over -- sourced, typed, never dressed up as measured.
         dcal = os.path.join(tmp, "feed")
         os.makedirs(dcal, exist_ok=True)
+        # 0.8.0 rewrite: every record names its model, and the product is a host strain
+        # does NOT recognise -- the session below has no transcript (model unknown), the
+        # one case where a lone record for an unrecognised host still applies.
         out, err, rc = run("_strain_calibrate.py", None,
-                           ["--state-dir", dcal, "--product", "Codex CLI",
+                           ["--state-dir", dcal, "--product", "Example Host",
+                            "--model", "example-model",
                             "--window", "258400", "--basis", "runtime",
                             "--source", "host runtime log"])
         check("0.6.0: calibrate writes a sourced, typed, dated record",
@@ -637,13 +1175,13 @@ def main():
               rc == 0 and '"valid": true' in out and '"basis": "runtime"' in out,
               out[:300])
         _, err, rc = run("_strain_calibrate.py", None,
-                         ["--state-dir", dcal, "--product", "X", "--window", "100",
-                          "--basis", "nominal"])
+                         ["--state-dir", dcal, "--product", "X", "--model", "m",
+                          "--window", "100", "--basis", "nominal"])
         check("0.6.0: an unsourced capacity is REFUSED (stale ruler doctrine)",
               rc == 2 and "source" in err, (rc, err[:200]))
         _, err, rc = run("_strain_calibrate.py", None,
-                         ["--state-dir", dcal, "--product", "X", "--window", "100",
-                          "--source", "s"])
+                         ["--state-dir", dcal, "--product", "X", "--model", "m",
+                          "--window", "100", "--source", "s"])
         check("0.6.0: a record without nominal/runtime basis is REFUSED",
               rc == 2 and "basis" in err, (rc, err[:200]))
         # denominator flows into a tick with no env override
@@ -697,7 +1235,8 @@ def main():
         if cmd:
             plain = {k: v for k, v in os.environ.items()
                      if k not in ("STRAIN_STATE_DIR", "STRAIN_SESSION")}
-            subprocess.run(["bash", "-c", cmd.replace("<Healthy|Mid|High|Warning|Danger>", "Mid")],
+            # 0.8.0: the tier slot also offers UNMEASURED -- fill whatever placeholder it shows
+            subprocess.run(["bash", "-c", _re.sub(r"<[^>]*>", "Mid", cmd)],
                            env=plain, capture_output=True, text=True, cwd=tmp)
         check("0.7.0 A1: run from a plain shell, the printed command records into this session",
               state_of(xdir, "sess-X1").get("last") == "Mid", state_of(xdir, "sess-X1"))
@@ -839,6 +1378,8 @@ def main():
         got = ctxm.detect_substrate({"transcript_path": "/x/claude-hostloop-plugins/ab12/projects/"
                                                         "session/s.jsonl"}, "/private/var/empty")
         check("0.7.0 B4: the hostloop transcript shape -> cowork", got == "cowork", got)
+
+        section_080(tmp)
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

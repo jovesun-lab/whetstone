@@ -1,5 +1,106 @@
 # Changelog
 
+## 0.8.0 — 2026-09-30
+
+**Codex as a known host, readings that say what they are, and records that never land in
+the wrong place.** Five fixes, one new host, one behaviour change you may notice in
+scripts, and five smaller improvements.
+
+Fixes:
+- **A calibration record rules only its own product and model.** Until now there was one
+  `calibration.json` per machine, and any valid record became the window of EVERY session
+  on that machine. One host recorded its 258,400-token window; from the next tool call on,
+  every session of another host on the same machine divided by it — a session 19% full was
+  told "Danger, wrap now". The record named its product and model; nothing compared them.
+  Records now live in `models.json`, one entry per `<product> · <model>`. The model must
+  match always; on a host strain recognises (Claude Code, Cowork, cloud Cowork, Codex) the
+  product must match too; on an unrecognised host the model alone picks, among records made
+  for unrecognised hosts, and only when exactly one fits. `strain-calibrate.sh` requires
+  `--model`, writes under a lock, and `--show` lists every record and which one rules this
+  session. The old `calibration.json` is never written again; it is read as one more
+  record, and one that names no model is never applied (the tick says so once).
+- **UNMEASURED can be recorded.** 0.7.0 proposed `UNMEASURED` but the recorder refused it,
+  so an agent with no number to feed had to invent a tier or keep the default Healthy —
+  the very value 0.7.0 banned. `strain-level.sh UNMEASURED` is accepted and carried.
+- **The hooks description is current.** It still said a compaction was "carried as
+  escalation", which 0.7.0 removed; it now says a compaction is stated, never a tier floor.
+- **A save that fails is said.** The tick ignored the result of saving the state file, so
+  an unwritable folder froze every count in silence. Now: one line on stderr, one notice
+  to the agent (once, not on every call), the boot says it too, and the next saved
+  reading notes the gap.
+- **Signing takes the session lock.** 0.7.0 locked every read-modify-write of a session
+  file except the sign's; a sign racing parallel tool calls could drop counts.
+
+New host — **Codex** (strain now reads Codex's own log):
+- The engine asks **host adapters** first — one small file per host (`_strain_host_codex.py`)
+  answering where the session's log is and how it is shaped — then the Claude transcript
+  reader, then the byte estimate. How a vendor's usage turns into "tokens in context" is a
+  separate layer (`context_tokens`): Anthropic's cached parts are separate fields that add
+  up; OpenAI's input count already includes the cache.
+- Codex's reading = the newest `last_token_usage.input_tokens` over the host-reported
+  `model_context_window`. The log must name this session on its first line; a compaction
+  or a model switch after the newest receipt makes the reading stale until the next
+  request; the zero receipt written right after a compaction is skipped; there is no clock
+  (an old receipt is not stale by age). A window the host reports live beats any
+  calibration record.
+- This reader started from a local adapter written and field-tested by a Codex agent; it
+  was rewritten here in the plugin's shape, with its own fixtures.
+
+Behaviour change — **a record needs a session key.** A record command without one used to
+fall back to "the session last seen in this folder", then "the most recent session on the
+machine"; with two agents working at once, a tier, an escaped error or a wrap could land
+in the wrong session. Now `strain-level.sh`, `strain-signal.sh`, `strain-sign.sh`,
+`strain-wrap.sh` and `strain-report.sh` take the key from `--session`, `STRAIN_SESSION`
+(printed in every tick) or the host's own shell variable (`CODEX_THREAD_ID`); on Claude
+Code the SessionStart hook exports `STRAIN_SESSION` into the agent's shell through the
+host's `CLAUDE_ENV_FILE` hand-over. `CLAUDE_CODE_SESSION_ID` is undocumented, so it is
+used only as a cross-check. Sources that disagree → refused, both named. No key → refused
+(exit 2) with up to three candidate sessions and a ready command for each. Reads (`--get`,
+`--show`, `--list`, `--status`, `--receipt`) may still guess and say "guessed". **Scripts
+that recorded without a key will now exit 2** — the error prints the fixed command.
+
+Improvements:
+- **The window says where it came from**: `window 258k (host-reported · Codex)` ·
+  `window 1M (calibrated: Claude Code · <model>)` · `window 1M (model hint)` ·
+  `window 200k (default)` · `(env override)`.
+- **UNMEASURED says which kind, and the next step ends in a record.** `no source` → a
+  host-neutral checklist of where hosts keep usage, ended by a feed or by
+  `strain-level.sh UNMEASURED --no-source --checked "<places>"` (the tick repeats until one
+  exists); `unusable` → the source and the reason, then a feed with provenance
+  (`--ctx-provenance host-reported|agent-estimated`) — and a fill past 100% now says the
+  used count is a lower bound, lists what to check and offers a hand-sent bug report;
+  `stale` → a host that measures itself re-measures at its next request, a fed number
+  needs a new feed.
+- **A receipt.** The first sign prints one line — host · session · reading source and
+  time · mode · window and its source · state file · ledger — and `strain-sign.sh
+  --receipt` reprints it. On Claude Code the hook shows it to the user itself (once per
+  session), together with a failed save and a reading that has just become UNMEASURED
+  (`STRAIN_USER_MESSAGES=off` turns this off).
+- **`strain-report.sh`** drafts a bug report (or an adapter proposal) about strain for the
+  user to send by hand: the facts strain holds, never a path, the session id or
+  conversation content. Nothing is sent.
+- **The byte estimate counts only what follows the last compaction marker** (Claude's
+  `compact_boundary`, Codex's `compacted`), scanned incrementally. A whole-file estimate
+  after a compaction counted everything the compaction removed.
+- **Docs**: README gains *Codex*, *Which session a record lands in* and *Where strain
+  writes* (including what to do when a sandboxed host asks for permission); the skill
+  gains the UNMEASURED procedures and "look before saying strain is missing".
+
+Selftest: 128 → 186. 58 new checks (52 fail on 0.7.0; the rest guard behaviour that
+already held, including a shared-file guard: a full scenario, then every file strain
+wrote must be one session's own or keyed per entry — by session, agent, or product ·
+model — so the next unkeyed shared file fails here). New fixtures use uuid-shaped session
+ids. Rewritten, not deleted:
+- "level resolves a session without being told" → a keyless write refuses and names the
+  candidate (the behaviour change above).
+- The 0.6.0 calibrate checks gain `--model`, and their product becomes an unrecognised
+  host ("Example Host"): Codex is now recognised, and a lone record applies only to
+  unrecognised hosts.
+- The 0.7.0 printed-command check fills whatever placeholder the tier slot shows (it now
+  offers `UNMEASURED`).
+- Every child run strips the host's session variables, so a check never depends on the
+  shell the selftest runs in.
+
 ## 0.7.0 — 2026-09-30
 
 **A record command that runs, and the proposal says what it knows.** Seven fixes and

@@ -15,6 +15,12 @@ file (suggest `Log.strain` at the project root, gitignored) that receives one
 the project's chain of sessions -- who worked, when, wrapped how -- without ever
 inheriting counters across sessions (one session, one measurement, unchanged).
 
+0.8.0 RECEIPT: the first sign of a session also prints one plain line saying what strain
+sees -- host, session, where the reading comes from and when, its mode, the window and
+where THAT came from, whether the state file and the ledger can be written. Reprint it any
+time with `strain-sign.sh --receipt`. Relay it to the user verbatim: it is the shortest
+proof that strain is running on this session, and what it is measuring.
+
 0.7.0 PREVIOUS SESSION REPORT: the FIRST sign of a session with a ledger reads the
 newest EARLIER session of the same agent in that ledger and prints one plain line --
 its tool calls, compactions, errors escaped / caught, whether it wrapped (and when),
@@ -23,9 +29,9 @@ and whether it kept working after the wrap. Read only: nothing is carried over.
 import argparse, os, re, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _strain_common import (state_dir, session_path, load, save, now_iso,
-                            resolve_sid, ledger_append_why, load_ledgers, save_ledgers,
-                            ledger_rows, signals_of)
+from _strain_common import (state_dir, session_path, load, save, now_iso, resolve_sid,
+                            resolve_for_write, ledger_append_why, load_ledgers, save_ledgers,
+                            ledger_rows, signals_of, state_lock, receipt, why_unsaved)
 
 
 def _when(ts):
@@ -95,46 +101,65 @@ def main(argv):
     ap.add_argument("--ledger", default=None)
     ap.add_argument("--session", default=None)
     ap.add_argument("--state-dir", default=None)
+    ap.add_argument("--receipt", action="store_true")
     args, _ = ap.parse_known_args(argv)
+
+    sdir = state_dir(args.state_dir)
+    if args.receipt:
+        # A read: may guess, and says so.
+        sid, how = resolve_sid(sdir, args.session)
+        if not sid:
+            sys.stderr.write("no session known yet (a hook has to run once first)\n")
+            return 2
+        path = session_path(sdir, sid)
+        st = load(path)
+        st.setdefault("sid", sid)
+        sys.stdout.write(receipt(st, sdir, path, _ledger_state(st)) + "\n")
+        sys.stderr.write("details: session %s (via %s) · state %s\n" % (sid, how, path))
+        return 0
 
     agent = args.agent or os.environ.get("STRAIN_AGENT")
     if not agent:
-        sys.stderr.write("usage: strain-sign.sh --agent <name> [--ledger <path>]\n")
+        sys.stderr.write("usage: strain-sign.sh --agent <name> [--ledger <path>] | --receipt\n")
         return 2
 
-    sdir = state_dir(args.state_dir)
-    sid, how = resolve_sid(sdir, args.session)
-    if not sid:
-        sys.stderr.write("no session to sign: no --session, no STRAIN_SESSION, and the "
-                         "index knows nothing yet (a hook has to run once first)\n")
+    # 0.8.0 A7: a sign names the session's agent -- it must be THIS session.
+    sid, how, refusal = resolve_for_write(sdir, args.session, "strain-sign.sh", argv)
+    if refusal:
+        sys.stderr.write(refusal)
         return 2
 
     path = session_path(sdir, sid)
-    st = load(path)
-    st.setdefault("sid", sid)
-    st["agent"] = agent
-    # 0.5.1 ledger resolution: explicit --ledger > this session's state > the
-    # per-agent durable registry (so a later session signs with no --ledger at
-    # all). The registry is a convenience pointer, never identity, and never
-    # lends across agents.
-    ledger_how = "none"
-    if args.ledger:
-        ledger = os.path.abspath(args.ledger)
-        ledger_how = "explicit"
-    else:
-        ledger = str(st.get("ledger") or "")
-        if ledger:
-            ledger_how = "session-state"
+    # 0.8.0 (S5): one read-modify-write at a time -- the 0.7.0 lock covered the hooks and
+    # the recorders but not the sign, so a sign racing parallel ticks could drop counts.
+    with state_lock(path):
+        st = load(path)
+        st.setdefault("sid", sid)
+        st["agent"] = agent
+        first_sign = not st.get("signedAt")
+        st.setdefault("signedAt", now_iso())
+        # 0.5.1 ledger resolution: explicit --ledger > this session's state > the
+        # per-agent durable registry (so a later session signs with no --ledger at
+        # all). The registry is a convenience pointer, never identity, and never
+        # lends across agents.
+        ledger_how = "none"
+        if args.ledger:
+            ledger = os.path.abspath(args.ledger)
+            ledger_how = "explicit"
         else:
-            ledger = str((load_ledgers(sdir).get(str(agent)) or {})
-                         .get("ledger") or "")
+            ledger = str(st.get("ledger") or "")
             if ledger:
-                ledger_how = "registry"
-    if ledger:
-        st["ledger"] = ledger
-    if not save(path, st):
-        sys.stderr.write("could not write state to %s\n" % path)
-        return 1
+                ledger_how = "session-state"
+            else:
+                ledger = str((load_ledgers(sdir).get(str(agent)) or {})
+                             .get("ledger") or "")
+                if ledger:
+                    ledger_how = "registry"
+        if ledger:
+            st["ledger"] = ledger
+        if not save(path, st):
+            sys.stderr.write("could not write state: %s\n" % why_unsaved(path))
+            return 1
 
     book_note, report, why = "", "", ""
     if ledger:
@@ -152,6 +177,10 @@ def main(argv):
     sys.stdout.write("Strain · Owner: %s — signed%s\n" % (agent, book_note))
     if report:
         sys.stdout.write(report + "\n")
+    if first_sign:
+        sys.stdout.write(receipt(st, sdir, path,
+                                 ("ledger booked" if not why else "ledger write FAILED")
+                                 if ledger else "no ledger") + "\n")
     if why:
         sys.stderr.write("ledger not written: %s\n" % why)
     sys.stderr.write("details: session %s (via %s)%s\n"
@@ -159,6 +188,16 @@ def main(argv):
                         (" · ledger %s (via %s)" % (ledger, ledger_how))
                         if ledger else " · no ledger"))
     return 0
+
+
+def _ledger_state(st):
+    ledger = str(st.get("ledger") or "")
+    if not ledger:
+        return "no ledger"
+    d = os.path.dirname(os.path.abspath(ledger))
+    ok = os.path.isdir(d) and os.access(d, os.W_OK) and \
+        (not os.path.exists(ledger) or os.access(ledger, os.W_OK))
+    return "ledger writable" if ok else "ledger write FAILED"
 
 
 if __name__ == "__main__":

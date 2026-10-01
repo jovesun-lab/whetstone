@@ -2,9 +2,19 @@
 """Record (or read) this session's strain tier.
 
     strain-level.sh <Healthy|Mid|High|Warning|Danger>   record a tier
+    strain-level.sh UNMEASURED                          record that nothing was measured
+    strain-level.sh <tier> --ctx-used N --ctx-source '<where>' [--ctx-provenance
+                    host-reported|agent-estimated]      feed the host's own number
+    strain-level.sh UNMEASURED --no-source --checked '<places looked>'
+                                                        record that no number exists
     strain-level.sh --get                               print the current tier
     strain-level.sh --show                              print the whole state as JSON
     strain-level.sh <tier> --session <id>               name the session explicitly
+
+A record needs a session key (0.8.0): --session, STRAIN_SESSION (printed in every tick,
+and exported into the agent's shell where the host allows it) or the host's own shell
+variable. Without one, a record is REFUSED with a list of candidate sessions -- it never
+lands in a guessed one. --get / --show may guess, and say so.
 
 WHY THE WRITER MATTERS
     A tier that is computed and then not written is a tier nobody carries. In an earlier
@@ -21,8 +31,9 @@ WHY THE WRITER MATTERS
 import argparse, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _strain_common import (TIERS, state_dir, session_path, load, save, blank,
-                            now_iso, resolve_sid, apply_calibration, state_lock)
+from _strain_common import (TIERS, RECORDABLE, state_dir, session_path, load, save,
+                            blank, now_iso, resolve_sid, resolve_for_write, settle_window,
+                            why_unsaved, state_lock)
 import _strain_context as ctxmod
 
 
@@ -39,10 +50,28 @@ def _main(argv, lock_holder):
     # number is honest input, never dressed up as a measurement strain made itself.
     ap.add_argument("--ctx-used", type=int, default=None)
     ap.add_argument("--ctx-source", default=None)
+    # 0.8.0 B3: where a fed number came from -- read from the host's own interface, or
+    # the agent's own estimate. Optional, so a 0.6.0/0.7.0 feed still works.
+    ap.add_argument("--ctx-provenance", default=None,
+                    choices=["host-reported", "agent-estimated"])
+    # 0.8.0 B3: the other way to end the "no source" checklist -- a visible record that
+    # the agent looked and found nothing, instead of a silence.
+    ap.add_argument("--no-source", action="store_true")
+    ap.add_argument("--checked", default=None)
     args, _ = ap.parse_known_args(argv)
 
     sdir = state_dir(args.state_dir)
-    sid, how = resolve_sid(sdir, args.session)
+    reading = args.show or args.get or args.tier == "--get"
+    if reading:
+        sid, how = resolve_sid(sdir, args.session)
+        if how.startswith("guessed"):
+            sys.stderr.write("session %s %s -- pass --session or STRAIN_SESSION to be sure\n"
+                             % (sid, how))
+    else:
+        sid, how, refusal = resolve_for_write(sdir, args.session, "strain-level.sh", argv)
+        if refusal:
+            sys.stderr.write(refusal)
+            return 2
     path = session_path(sdir, sid)
     lock = state_lock(path)
     lock.__enter__()                   # 0.7.0: one read-modify-write at a time
@@ -58,9 +87,6 @@ def _main(argv, lock_holder):
                              "number was read (e.g. 'host runtime log') -- an unsourced "
                              "reading cannot be trusted later\n")
             return 2
-        mode, why = apply_calibration(sdir)
-        lim = ctxmod.limit(str(st.get("model") or ""))
-        pct = round(100.0 * args.ctx_used / lim, 1)
         if not st:
             st = blank(sid)
         # 0.7.0: the feed is an ANCHOR the tick scores and keeps -- it records what
@@ -72,25 +98,44 @@ def _main(argv, lock_holder):
             anchor = os.path.getsize(tp) if tp else None
         except Exception:
             anchor = None
-        st["ctx"] = {"mode": "agent-fed", "tokens": int(args.ctx_used), "limit": lim,
-                     "pct": pct, "source": args.ctx_source.strip(),
-                     "fedTokens": int(args.ctx_used),
-                     "fedCompactions": int(st.get("compactions", 0) or 0),
-                     "fedModel": str(st.get("model") or ""),
-                     "anchorBytes": anchor, "transcript": tp,
-                     "baseline": prev.get("baseline"),
-                     "fedAt": now_iso(),
-                     "limit_basis": why if mode != "uncalibrated"
-                     else "engine default/model hint (uncalibrated)"}
+        fed = {"mode": "agent-fed", "tokens": int(args.ctx_used),
+               "source": args.ctx_source.strip(),
+               "provenance": args.ctx_provenance or "",
+               "fedTokens": int(args.ctx_used),
+               "fedCompactions": int(st.get("compactions", 0) or 0),
+               "fedModel": str(st.get("model") or ""), "model": str(st.get("model") or ""),
+               "anchorBytes": anchor, "transcript": tp,
+               "baseline": prev.get("baseline"),
+               "fedAt": now_iso()}
+        # 0.8.0 A1: the same denominator decision as the tick -- never another host's.
+        fed, _look = settle_window(fed, sdir, st.get("substrate", ""))
+        st["ctx"] = fed
         st["updated"] = now_iso()
         if not save(path, st):
-            sys.stderr.write("could not write state to %s\n" % path)
+            sys.stderr.write("could not write state: %s\n" % why_unsaved(path))
             return 1
-        sys.stdout.write("fill %.1f%% — agent-fed: %s of %s tokens (%s)\n"
-                         % (pct, "{:,}".format(int(args.ctx_used)),
-                            "{:,}".format(int(lim)), st["ctx"]["limit_basis"]))
+        sys.stdout.write("fill %.1f%% — agent-fed: %s of %s tokens (window: %s)\n"
+                         % (fed["pct"], "{:,}".format(int(args.ctx_used)),
+                            "{:,}".format(int(fed["limit"])), fed["limitSource"]))
         sys.stderr.write("source: %s · session %s (resolved by %s) -> %s\n"
                          % (args.ctx_source.strip(), sid or "unknown", how, path))
+        if args.tier is None:
+            return 0
+
+    if args.no_source:
+        if not (args.checked or "").strip():
+            sys.stderr.write("--no-source needs --checked '<the places you looked>' -- the "
+                             "record is only worth something if it says where\n")
+            return 2
+        if not st:
+            st = blank(sid)
+        st["noSource"] = {"checked": args.checked.strip(), "at": now_iso()}
+        st["updated"] = now_iso()
+        if not save(path, st):
+            sys.stderr.write("could not write state: %s\n" % why_unsaved(path))
+            return 1
+        sys.stderr.write("recorded: no context source on this host (checked: %s)\n"
+                         % args.checked.strip())
         if args.tier is None:
             return 0
 
@@ -109,12 +154,12 @@ def _main(argv, lock_holder):
         return 0
 
     if args.tier is None:
-        sys.stderr.write("usage: strain-level.sh <%s> | --get | --show\n" % "|".join(TIERS))
+        sys.stderr.write("usage: strain-level.sh <%s> | --get | --show\n" % "|".join(RECORDABLE))
         return 2
-    if args.tier not in TIERS:
+    if args.tier not in RECORDABLE:
         # A typo must not become a reading.
         sys.stderr.write("unknown tier %r; expected one of %s\n"
-                         % (args.tier, ", ".join(TIERS)))
+                         % (args.tier, ", ".join(RECORDABLE)))
         return 2
 
     if not st:
@@ -122,7 +167,7 @@ def _main(argv, lock_holder):
     st["last"] = args.tier
     st["updated"] = now_iso()
     if not save(path, st):
-        sys.stderr.write("could not write state to %s\n" % path)
+        sys.stderr.write("could not write state: %s\n" % why_unsaved(path))
         return 1
 
     sys.stdout.write(args.tier)

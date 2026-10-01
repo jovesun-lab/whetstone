@@ -31,6 +31,11 @@ WHERE THE NUMBER COMES FROM
     before a single instruction was carried out -- system prompt, tool schemas, project
     instructions, skills. That is the floor the session can never get back under.
 
+OTHER HOSTS (0.8.0)
+    A host that keeps its usage in its own log shape gets an ADAPTER (one file, see
+    ADAPTERS below; Codex is the first). The engine asks the adapters first, then this
+    transcript reader, then the byte estimate.
+
 TIMING MATTERS
     Read this at tool-call time, not at session start. At SessionStart the transcript
     usually does not exist on disk yet, so an earlier version of this probe recorded
@@ -61,19 +66,61 @@ MODEL_LIMITS = (
 )
 
 
-def limit(model=""):
-    """The context window for this session: env override > model hint > default."""
+def limit_and_source(model=""):
+    """(window, where it came from): env override > model hint > default. 0.8.0: the
+    source travels with the number, so a reading can say which ruler it used."""
     env = os.environ.get("STRAIN_CONTEXT_LIMIT")
     if env:
         try:
-            return max(1, int(env))
+            return max(1, int(env)), "env override"
         except Exception:
             pass
     m = (model or "").lower()
     for frag, n in MODEL_LIMITS:
         if frag in m:
-            return n
-    return DEFAULT_LIMIT
+            return n, "model hint"
+    return DEFAULT_LIMIT, "default"
+
+
+def limit(model=""):
+    """The context window for this session: env override > model hint > default."""
+    return limit_and_source(model)[0]
+
+
+# ---- 0.8.0: the USAGE DIALECT -- how a vendor's usage turns into "tokens in context" ----
+# A host adapter answers WHERE the log is and how it is shaped; this layer answers what
+# its numbers mean. Anthropic splits the prompt into uncached + cache-read + cache-write
+# (disjoint -- they add up); OpenAI's input_tokens already INCLUDES the cached part (a
+# live Codex receipt: 128,512 cached inside 129,584 input). Keyed by the model's vendor;
+# the field shape decides only when the model is not known.
+
+def vendor_of(model):
+    m = (model or "").lower()
+    if m.startswith("claude") or any(w in m for w in ("opus", "sonnet", "haiku", "fable",
+                                                       "mythos")):
+        return "anthropic"
+    if m.startswith(("gpt", "o1", "o3", "o4", "codex")):
+        return "openai"
+    return ""
+
+
+def context_tokens(usage, model=""):
+    """Tokens in context for one usage object, or None."""
+    if not isinstance(usage, dict):
+        return None
+    v = vendor_of(model)
+    if not v:
+        v = "openai" if ("cached_input_tokens" in usage
+                         and "cache_read_input_tokens" not in usage) else "anthropic"
+    keys = (("input_tokens",) if v == "openai" else
+            ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+    total = 0
+    for k in keys:
+        try:
+            total += int(usage.get(k) or 0)
+        except Exception:
+            pass
+    return total if total > 0 else None
 
 
 def _usage_of(line):
@@ -96,16 +143,13 @@ def _usage_of(line):
     # from-cache + written-to-cache are disjoint, their sum IS the context the model saw.
     # The 102% is fully explained by a 200k denominator under a true 1M window (fixed in
     # MODEL_LIMITS above). If a host is ever SHOWN double-counting, fix it here with a
-    # transcript receipt -- never by discounting the sum on a hunch.
-    total = 0
-    for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
-        try:
-            total += int(u.get(k) or 0)
-        except Exception:
-            pass
-    if total <= 0:
+    # transcript receipt -- never by discounting the sum on a hunch. (0.8.0: the sum
+    # lives in context_tokens, the dialect layer.)
+    model = str(msg.get("model") or "")
+    total = context_tokens(u, model)
+    if total is None:
         return None, ""
-    return total, str(msg.get("model") or "")
+    return total, model
 
 
 def locate(payload, sid):
@@ -173,15 +217,96 @@ def read_usage(path, want_baseline=True):
     return current, baseline, model
 
 
-def measure(payload, sid, known_baseline=None):
+# ---- 0.8.0: HOST ADAPTERS --------------------------------------------------------------
+# One file per host that keeps its conversation log in its own shape. Each answers ONE
+# question -- where is this session's log and how is it shaped -- through two calls:
+#     detect(payload, cwd) -> bool      is this session running under my host?
+#     measure(payload, sid) -> dict|None   a reading, or None when the log is not mine
+# The engine asks the adapters first, then the Claude transcript reader, then the byte
+# estimate. An adapter that cannot load is skipped: a broken adapter must never cost the
+# hosts that do not need it.
+ADAPTERS = ("_strain_host_codex",)
+
+
+def _adapters():
+    import importlib
+    mods = []
+    for name in ADAPTERS:
+        try:
+            mods.append(importlib.import_module(name))
+        except Exception:
+            continue
+    return mods
+
+
+# 0.8.0 (D5): the byte estimate counts only what follows the LAST compaction marker. A
+# whole-file estimate after a compaction counts everything the compaction removed (a
+# 9.3 MB transcript read as ~2.3M tokens for a real 39K). Markers seen in live logs:
+# Claude's `compact_boundary` record and Codex's `compacted` row. The pattern needs an
+# unescaped quote before the key, so the same words inside message text never match.
+COMPACTION_MARKER = re.compile(rb'"(?:subtype|type)"\s*:\s*"(?:compact_boundary|compacted)"')
+SCAN_CHUNK = 1 << 20
+
+
+def _after_last_marker(path, size, prev_scan):
+    """Byte offset just after the last compaction marker (0 when none). Incremental:
+    a previous scan of the same file is resumed, so a long transcript is read once, not
+    on every tool call."""
+    start, marker_end = 0, 0
+    if isinstance(prev_scan, dict) and prev_scan.get("path") == path:
+        try:
+            if int(prev_scan.get("scannedTo", 0)) <= size:
+                start = max(0, int(prev_scan.get("scannedTo", 0)) - 256)
+                marker_end = int(prev_scan.get("markerEnd", 0))
+        except Exception:
+            start, marker_end = 0, 0
+    try:
+        with open(path, "rb") as f:
+            f.seek(start)
+            pos = start
+            carry = b""
+            while pos < size:
+                chunk = f.read(min(SCAN_CHUNK, size - pos))
+                if not chunk:
+                    break
+                buf = carry + chunk
+                base = pos - len(carry)
+                for m in COMPACTION_MARKER.finditer(buf):
+                    nl = buf.find(b"\n", m.end())
+                    if nl != -1:
+                        marker_end = max(marker_end, base + nl + 1)
+                pos += len(chunk)
+                carry = buf[-256:]
+    except Exception:
+        return marker_end, {"path": path, "scannedTo": start, "markerEnd": marker_end}
+    return marker_end, {"path": path, "scannedTo": size, "markerEnd": marker_end}
+
+
+def measure(payload, sid, known_baseline=None, prev=None):
     """The context reading for one session. Never raises; never guesses a number.
 
     Pass the baseline already stored in the session state to skip re-reading the head of
-    a transcript that only ever grows at the other end.
+    a transcript that only ever grows at the other end; pass the previous reading as
+    `prev` so the estimate's compaction scan can resume.
+
+    0.8.0: every reading names its `source`, and a reading that is not a number says
+    which KIND of not-a-number it is (`kind`: "no source" / "unusable" / "stale", with
+    `why`), so the next step can fit the case instead of one hint for all of them.
     """
+    lim, lsrc = limit_and_source()
     out = {"mode": "inferred", "tokens": None, "baseline": known_baseline,
-           "limit": limit(), "pct": None, "transcript": "", "model": ""}
+           "limit": lim, "limitSource": lsrc, "pct": None, "transcript": "", "model": "",
+           "source": "none", "kind": "no source",
+           "why": "no conversation log this host exposes was found"}
     try:
+        for mod in _adapters():
+            try:
+                got = mod.measure(payload, sid)
+            except Exception:
+                got = None
+            if got is not None:
+                got.setdefault("baseline", known_baseline)
+                return got
         path = locate(payload, sid)
         if not path:
             return out
@@ -198,18 +323,17 @@ def measure(payload, sid, known_baseline=None):
                 return out
             if size <= 0:
                 return out
-            out["mode"] = "estimated"
-            out["tokens"] = size // 4
-            out["transcript"] = path
-            out["limit"] = limit()
+            mend, scan = _after_last_marker(path, size, (prev or {}).get("scan"))
+            out.update({"mode": "estimated", "tokens": (size - mend) // 4,
+                        "transcript": path, "source": "transcript-bytes", "scan": scan,
+                        "sinceCompaction": bool(mend), "kind": "", "why": ""})
             out["pct"] = round(100.0 * out["tokens"] / out["limit"], 1)
             return out
-        out["mode"] = "measured"
-        out["tokens"] = current
-        out["baseline"] = known_baseline if known_baseline is not None else base
-        out["transcript"] = path
-        out["model"] = model
-        out["limit"] = limit(model)      # the denominator follows the observed model
+        lim, lsrc = limit_and_source(model)    # the denominator follows the observed model
+        out.update({"mode": "measured", "tokens": current, "transcript": path,
+                    "model": model, "limit": lim, "limitSource": lsrc,
+                    "source": "claude-transcript", "kind": "", "why": "",
+                    "baseline": known_baseline if known_baseline is not None else base})
         out["pct"] = round(100.0 * current / out["limit"], 1)
     except Exception:
         pass
@@ -272,6 +396,13 @@ def detect_substrate(payload, cwd=""):
     # under /root/.claude/projects/, which the path rule below would call claude-code.
     if os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "remote_cowork":
         return "cowork-cloud"
+    # 0.8.0: a host with its own adapter recognises its own sessions.
+    for mod in _adapters():
+        try:
+            if mod.detect(payload, cwd):
+                return mod.SUBSTRATE
+        except Exception:
+            continue
     tp = str((payload or {}).get("transcript_path") or "")
     probe = tp + " " + (cwd or "")
     if "local-agent-mode-sessions" in probe or probe.startswith("/sessions/") \
@@ -316,6 +447,10 @@ def describe(ctx):
     bit = "context %s/%s (%.0f%%)" % (k(ctx.get("tokens")), k(ctx.get("limit")), ctx.get("pct") or 0)
     if ctx.get("mode") == "estimated":
         bit += ", ESTIMATED from transcript bytes (no token usage on this host)"
+        if ctx.get("sinceCompaction"):
+            bit += ", counted from the last compaction"
+    elif ctx.get("source") == "codex-rollout":
+        bit += ", read from the Codex log (the latest completed request)"
     elif ctx.get("baseline"):
         bit += ", of which %s was the boot itself" % k(ctx["baseline"])
     return bit

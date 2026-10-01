@@ -23,8 +23,9 @@ mentions the session has gone bad, and lets you find out from the output.
    bash <strain>/scripts/strain-wrap.sh --label "what was handed off"
    ```
    `<strain>` is the plugin folder; every tick prints the commands with the real path
-   and this session's key already filled in. A stamp records that the session wrapped;
-   it resets nothing — a new session starts at zero anyway.
+   and this session's key already filled in (a record without the key is refused — see
+   *Which session a record lands in*). A stamp records that the session wrapped; it
+   resets nothing — a new session starts at zero anyway.
 
 Nothing to configure. Nothing leaves your machine.
 
@@ -45,6 +46,10 @@ That number on the first line is measured, not estimated — see below.
 | **estimated** | a transcript exists but carries no token usage | fill estimated from transcript bytes (~4 bytes/token), labelled ESTIMATED in every readout |
 | **inferred** | no transcript at all | behaviour counting: tool calls, compactions, and what the task list shows |
 
+Since 0.8.0 the engine asks **host adapters** first — one small file per host that keeps
+its log in its own shape. Codex is the first (see *Codex* below); a host with an adapter
+is read in `measured` mode from its own numbers.
+
 `inferred` is not a failure — it is the original design and it works. What *would* be a
 failure is printing a confident number nobody measured, so the mode travels with every
 readout.
@@ -57,49 +62,106 @@ of the window.
 Measured mode also observes **which model is running** — from the same transcript line
 that carries the usage, so a mid-session model switch is seen too. Two things depend on
 it: the model log (one appended row per observed change, never per tick), and the
-**denominator**. The host does not publish the window size anywhere, so strain infers it
-from the model id (`fable` and `[1m]` variants → 1M; anything else → 200k) and
-`STRAIN_CONTEXT_LIMIT` overrides the guess. This matters more than it sounds: a hardcoded
+**denominator**. Every readout names where its window came from (0.8.0), in this order of
+trust: `env override` (`STRAIN_CONTEXT_LIMIT`) · `host-reported` (the host states its
+window live — Codex does) · `calibrated: <product> · <model>` (a record you made, see
+below) · `model hint` (inferred from the model id: `fable`, `opus-5` and `[1m]` variants →
+1M, and so on) · `default` (200k). So the bracket reads, for example,
+`window 1M (model hint)` or `window 258k (host-reported · Codex)`. This matters more than it sounds: a hardcoded
 200k denominator once reported a 1M-window session at 69% when it was actually 14% full —
 a wrong number delivered with full confidence, which is exactly what this tool exists not
 to do.
 
-## When strain cannot read your host (0.6.0)
+## When strain cannot read your host (0.6.0, reworked in 0.8.0)
 
 The first cross-model field report made a gap plain: a session on a non-Claude host had
 its numbers on screen — the host reported a 258,400-token runtime window and per-turn
-usage — and strain still ran in `inferred` mode, because the transcript reader knows one
-host's shape. "The host exposes nothing" and "the host exposes something strain cannot
-parse" used to land in the same coarse mode. The fix is a front door, not a pile of
-per-host parsers:
+usage — and strain still ran blind, because the transcript reader knew one host's shape.
+"The host exposes nothing" and "the host exposes something strain cannot parse" used to
+land in the same coarse mode. Two front doors fix that, and an adapter (0.8.0) closes it
+for good for hosts that keep a durable log.
 
-**Denominator** — record your environment's window once, sourced and typed:
+**When nothing is measured, strain says which kind of nothing (0.8.0).** The tick never
+says Healthy for a reading it does not have; it proposes `UNMEASURED` and names one of
+three kinds, each with its own next step:
+
+| Kind | What happened | Next step the tick gives |
+|---|---|---|
+| `no source` | no log strain can read on this host | look where hosts keep usage (a session log, a status or usage command, a usage API, the settings pane), then end with ONE record: a feed, or `--no-source --checked "<places looked>"`. The tick repeats until one exists, so skipping it is visible. |
+| `unusable` | a source was read and gave no usable number (no usage lines, a window of 0, a log that names another session, or a fill at or past 100%) | read the host's own number and feed it with its provenance; a fill past 100% is strain's arithmetic going wrong, so the tick says the used count is a **lower bound**, lists what to check (model · effective window · double counting · compaction boundary) and offers a hand-sent bug report |
+| `stale` | a compaction or a model switch happened after the last reading | a host that measures itself re-measures at its next request (nothing to do); a fed number needs a new feed |
+
+`UNMEASURED` can also be **recorded** — `strain-level.sh UNMEASURED` — so an agent with no
+number to give never has to invent a tier.
+
+**Denominator** — record a window once, for one product and one model, sourced and typed:
 
 ```
-bash <strain>/scripts/strain-calibrate.sh --product "Codex CLI" \
+bash <strain>/scripts/strain-calibrate.sh --product "Example Host" --model ex-model-1 \
      --window 258400 --basis runtime --source "host runtime log"
 ```
 
-`--basis` is required and is the field that keeps the record honest: `nominal` is the
-published capacity, `runtime` is what the host reports live (often smaller — e.g. a
-post-compaction window). A runtime reading mistaken for the model's nominal size
-corrupts every percentage after it. The record expires (default 30 days) and a stale
-one falls back loudly — it never silently keeps ruling.
+A record belongs to ONE `<product> · <model>` (0.8.0). Until 0.7.0 there was one record per
+machine and every session on the machine divided by it: one host's 258,400-token window
+became the window of every session on another host next to it, and a session 19% full was
+told to wrap now. Now the model must match always; on a host strain recognises (Claude
+Code, Cowork, cloud Cowork, Codex) the product must match too; on a host it does not
+recognise, the model alone picks — among records made for unrecognised hosts, and only
+when exactly one fits. A window the host reports live beats any record. The old
+`calibration.json` is no longer written; strain reads it as one more record, and one that
+names no model is never applied (the tick says so once). `strain-calibrate.sh --show`
+lists every record and says which one rules this session, and why.
+
+`--basis` is required and keeps the record honest: `nominal` is the published capacity,
+`runtime` is what the host reports live (often smaller — e.g. a post-compaction window).
+A runtime reading mistaken for the model's nominal size corrupts every percentage after
+it. A record expires (default 30 days) and a stale one falls back loudly — it never
+silently keeps ruling.
 
 **Numerator** — when the host shows its usage, hand it over at recording time:
 
 ```
-bash <strain>/scripts/strain-level.sh Mid --ctx-used 65749 --ctx-source "host runtime log"
+bash <strain>/scripts/strain-level.sh Mid --ctx-used 65749 --ctx-source "host status command" \
+     --ctx-provenance host-reported
 ```
 
-The readout then says `fill 25.4% — agent-fed: 65,749 of 258,400 tokens (calibrated …)`.
+The readout then says `fill 25.4% — agent-fed: 65,749 of 258,400 tokens (window: …)`.
 `agent-fed` is its own mode, printed every time: a fed number is honest input with a
-named source — it is never dressed up as a measurement strain made itself.
+named source — never dressed up as a measurement strain made itself. `--ctx-provenance`
+says whether you read it from the host (`host-reported`) or estimated it yourself
+(`agent-estimated`).
+
+**A host whose log strain cannot read yet?** If the number lives in a durable log, write
+an **adapter proposal** — where the log is, which fields carry the usage, one redacted
+sample line — with `strain-report.sh --note "…"`, and send it to the maintainers. Do not
+patch the installed plugin: the next update overwrites a local patch, and it helps
+nobody else.
 
 **No hooks on your host?** Then ticks will not fire on their own. Adopt the manual
 cadence the skill describes: run the strain check by hand every ~10 tool calls or at
-every milestone, and feed the reading if your host shows one. An instrument nobody
-polls is an instrument that stays quiet — on hook-less hosts the polling is yours.
+every milestone, and feed the reading if your host shows one. Name your session once
+with `--session <name>` on every record command — strain does not guess one for you.
+An instrument nobody polls is an instrument that stays quiet — on hook-less hosts the
+polling is yours.
+
+## Codex (0.8.0)
+
+Codex writes one log per session — `~/.codex/sessions/YYYY/MM/DD/rollout-…-<session id>.jsonl`
+(or under `$CODEX_HOME`) — and records, on every request, how many tokens went in and how
+big the window is. strain reads that receipt directly: the newest
+`last_token_usage.input_tokens` (the cached part is already inside it, so nothing is
+counted twice) over the host-reported `model_context_window`. Nothing to configure, no
+calibration record needed. Details:
+
+- The log is found by the hook's own session id and must name that id on its first line —
+  a log that belongs to another session is never read as this one.
+- A compaction or a model switch after the newest receipt makes the reading `stale` until
+  the next request writes a new one (the zero receipt Codex writes right after a
+  compaction is skipped). There is no clock: an old receipt is not stale by age.
+- Codex writes the receipt after the tool output, so a hook usually reads the previous
+  request — one request behind, the same lag as the Claude reader.
+- The agent's shell carries `CODEX_THREAD_ID`, which is the same id; record commands use
+  it as their session key.
 
 ## One session, one reading
 
@@ -114,6 +176,59 @@ This is not a detail. An earlier internal build kept one global state file with 
 session slot, so a second session simply overwrote the first and both counters became
 meaningless. The session id is also how the host names the transcript — so *whose strain
 is this* and *can I read this session's real context size* are the same question.
+
+## Which session a record lands in (0.8.0)
+
+The hooks always know their session — the host puts the id in every payload. The agent's
+shell does not, and until 0.7.0 a record command without a key fell back to "the session
+last seen in this folder", then "the most recent session on the machine". With two agents
+working at once, a tier, an escaped error or a wrap could land in whichever session fired
+a hook last, while the right session's number never moved.
+
+Now a record (`strain-level.sh`, `strain-signal.sh`, `strain-sign.sh`, `strain-wrap.sh`,
+`strain-report.sh`) needs a key, from one of these, in order of trust:
+
+1. `--session <id>`, typed.
+2. `STRAIN_SESSION` — every tick prints it into the ready-made command; on Claude Code the
+   SessionStart hook also exports it into the agent's shell (through the host's
+   `CLAUDE_ENV_FILE` hand-over), so plain commands land in the right session.
+3. The host's own shell variable — Codex sets `CODEX_THREAD_ID`.
+
+Claude Code shells also carry `CLAUDE_CODE_SESSION_ID`; it is not documented, so strain
+uses it only as a cross-check: when sources disagree, the record is refused and both are
+named. With no key at all, the record is **refused** (exit 2) with up to three candidate
+sessions and a ready command for each — it never picks one. Reads (`--get`, `--show`,
+`--list`, `--status`, `--receipt`) may still guess, and say "guessed" when they do.
+
+**The receipt.** The first sign of a session prints one line saying what strain sees, and
+`strain-sign.sh --receipt` reprints it any time:
+
+```
+Strain receipt — host Claude Code · session 0a8e0001 · reading Claude transcript at 09-30 18:15 · measured · window 1M (model hint) · state saved · no ledger
+```
+
+On Claude Code the hook shows that line to you itself, once per session (the host's
+`systemMessage`), along with two other things that must not depend on the agent passing
+them on: a state file that cannot be saved, and a reading that has just become
+`UNMEASURED`. `STRAIN_USER_MESSAGES=off` turns this off. On other hosts, the skill asks the
+agent to relay the receipt verbatim.
+
+## Where strain writes
+
+Everything strain keeps is in one folder **outside your project**:
+`~/.local/state/strain` (or `$XDG_STATE_HOME/strain`, or wherever `STRAIN_STATE_DIR`
+points). Inside it, every file is either one session's own (`sessions/<id>.json`, a draft
+under `reports/`) or keyed per entry — by session (`index.json`, `model-log.jsonl`), by
+agent (`ledgers.json`) or by product · model (`models.json`). A selftest check walks a full
+scenario and fails if a file appears that no reader could attribute.
+
+- **Sandboxed hosts** (Codex, for one) may block writes outside the project and ask for
+  permission when a record command runs. Ask the user rather than escalating on your own —
+  or set `STRAIN_STATE_DIR` to a folder inside the project for that host.
+- **A save that fails is said**, never swallowed: the tick says so once (and on Claude
+  Code shows it to the user), the boot says so, and the next saved reading notes the gap.
+- The project **ledger** (`Log.strain`, when you sign with one) is the only file strain
+  writes inside a project, and only where you point it.
 
 ## Cloud Cowork (0.7.0)
 
@@ -183,12 +298,12 @@ STRAIN_SESSION=<session-id> bash <plugin>/scripts/strain-sign.sh --agent ana --l
 ```
 
 `<plugin>` is wherever the installed copy lives (for Claude Code,
-`~/.claude/plugins/cache/whetstone/strain/<version>`). Run from the project
-folder you can drop `STRAIN_SESSION` — the sign picks the session the index
-knows for that folder, newest first, and the stderr line names which basis it
-used. The one stdout line — `Strain · Owner: ana — signed (…)` — is the
-receipt: paste it back to the agent and the session is signed. Until then the
-session simply stays unsigned: measured, but part of no chain.
+`~/.claude/plugins/cache/whetstone/strain/<version>`). The key is required
+(0.8.0): without it the sign is refused and lists the candidate sessions with a
+ready command for each — it no longer picks "the session this folder saw last".
+The stdout lines — `Strain · Owner: ana — signed (…)` and the `Strain receipt`
+line — are the proof: paste them back to the agent and the session is signed.
+Until then the session simply stays unsigned: measured, but part of no chain.
 
 ## What it counts
 
@@ -249,17 +364,23 @@ the command failed in the agent's own shell.)
 
 | Command | What it does |
 |---|---|
-| `strain-level.sh <tier>` | record the tier for this session |
-| `strain-level.sh <tier> --ctx-used <n> --ctx-source "<where>"` | record a tier AND feed the host's own usage reading (agent-fed fill, source named) |
-| `strain-calibrate.sh --product <p> --window <n> --basis nominal\|runtime --source "<where>"` | record this environment's window — sourced, typed, expiring; becomes the fill denominator |
-| `strain-calibrate.sh --show` | print the calibration record and whether it is still valid |
+| `strain-level.sh <tier>` | record the tier for this session (`UNMEASURED` is recordable too) |
+| `strain-level.sh <tier> --ctx-used <n> --ctx-source "<where>" [--ctx-provenance host-reported\|agent-estimated]` | record a tier AND feed the host's own usage reading (agent-fed fill, source named) |
+| `strain-level.sh UNMEASURED --no-source --checked "<places>"` | record that this host shows no usage anywhere you looked — ends the tick's "no source" checklist |
+| `strain-calibrate.sh --product <p> --model <m> --window <n> --basis nominal\|runtime --source "<where>"` | record the window of one product · model — sourced, typed, expiring |
+| `strain-calibrate.sh --show` | list every record, whether each is valid, and which one rules this session |
+| `strain-report.sh [--note "…"] [--title "…"]` | draft a bug report (or an adapter proposal) about strain for the user to send by hand; nothing is sent |
 | `strain-level.sh --get` | print the current tier |
 | `strain-level.sh --show` | the whole state, including the context reading and which file it came from |
 | `strain-signal.sh <kind> --caught\|--escaped` | record a hard signal; escaped ones floor the tier, caught ones feed the pattern note |
 | `strain-signal.sh --list` | print this session's signal ledger |
 | `strain-wrap.sh --label "…" [--with-debt]` | stamp this session wrapped / handed off; resets nothing; books a `wrap` row when signed with a ledger |
 | `strain-wrap.sh --status` | show this session's wrap state |
-| `strain-sign.sh --agent <name> [--ledger <path>]` | declare who works this session; with a ledger, book boot-sign/wrap rows and report the previous session of the same agent |
+| `strain-sign.sh --agent <name> [--ledger <path>]` | declare who works this session; with a ledger, book boot-sign/wrap rows and report the previous session of the same agent; the first sign prints the receipt |
+| `strain-sign.sh --receipt` | reprint this session's receipt |
+
+Every record command needs this session's key (see *Which session a record lands in*);
+the printed commands carry it.
 
 `strain-level.sh` prints which session it resolved and where it wrote. That is deliberate:
 in an earlier build the writer defaulted to a different file from the one the hooks read,
@@ -272,7 +393,7 @@ exactly like a check that is working fine and always says Healthy.
 |---|---|---|
 | `STRAIN_N` | tool calls between ticks | `10` |
 | `STRAIN_STATE_DIR` | where state lives | `~/.local/state/strain` (or `$XDG_STATE_HOME/strain`) |
-| `STRAIN_CONTEXT_LIMIT` | context window size, tokens; overrides the model-based guess | inferred from the observed model (`fable` / `[1m]` → 1M, else 200k) |
+| `STRAIN_CONTEXT_LIMIT` | context window size, tokens; overrides every other source | host-reported > calibrated record > model hint > 200k |
 | `STRAIN_CAP_MID` / `_HIGH` / `_WARN` | fill % that enters Mid / High / Warning | `50` / `60` / `70` |
 | `STRAIN_THROTTLE_ONSET` | fill % where your platform's model visibly degrades | `80` |
 | `STRAIN_WRAP_BUDGET` | context cost of a full session wrap, in fill % | `6` |
@@ -280,7 +401,9 @@ exactly like a check that is working fine and always says Healthy.
 | `STRAIN_SUBSTRATE` | name the shell explicitly for the calibration line | detected from the transcript path |
 | `STRAIN_DRIFT_GLANCE` | `off` drops the tick's goal-drift glance (a non-flooring ask to check your task track for a side task outgrowing the marked MAIN goal — pairs with throughline's convention; drift is a note, never a tier input) | `on` |
 | `STRAIN_NO_MODEL_LOG` | stop recording which model ran which session | unset |
-| `STRAIN_SESSION` | name the session explicitly for CLI commands | resolved from the working directory |
+| `STRAIN_SESSION` | this session's key for record commands | printed in every tick; exported into the shell on Claude Code; records refuse without a key |
+| `STRAIN_USER_MESSAGES` | `off` stops strain showing its receipt and failure notices to the user directly (Claude Code) | `on` |
+| `CODEX_HOME` | where Codex keeps its logs, if not `~/.codex` | `~/.codex` |
 
 **Three numbers are yours to fill in — the defaults are honest starting points, not
 facts about your setup:**
@@ -318,6 +441,7 @@ selftest are the design's contract.
 - **A tier that never moves is a broken check, not a healthy session.** The counting is the
   work.
 - **Nothing is sent anywhere.** State and the model log are local files you can open.
+  `strain-report.sh` only writes a draft; sending it is yours to do, or not.
 - **One honest limitation, partially closed:** whether a host *surfaces* the tick to the
   agent is a separate question from whether the hook ran. Loading is easy to verify (the
   state file appears and the count advances); surfacing is not. **Verified on Claude
@@ -339,15 +463,19 @@ requires the other.
 python3 tools/selftest.py -v
 ```
 
-128 checks, host-independent: counting, per-session isolation, the tick firing on schedule
+186 checks, host-independent: counting, per-session isolation, the tick firing on schedule
 and only then, the writer and reader agreeing on one location, wraps that reset nothing
 (and touch no other session), compactions stated but never floored, all three context
 modes plus a fed reading that is scored and kept, model observation (logged on change, a
 mid-session switch gets its own row, no empty rows), the denominator following the observed
 model, fill-band math on two capacities, escaped-vs-caught signal weighting, the boot line
 printing the same caps as the tick, a printed record command that runs from a plain shell,
-parallel ticks losing no count, the previous-session report, and malformed
-payloads never failing a tool call — plus the **negative fixture**: the v1 bug (Danger
+parallel ticks losing no count, the previous-session report, a calibration record ruling
+only its own product · model, the Codex reader (receipts, compaction, model switch, a log
+that names another session), records refusing without a session key, the three kinds of
+UNMEASURED and their next steps, the receipt, a failed save being said, every file strain
+writes being one session's own or keyed per entry, and malformed payloads never failing a
+tool call — plus the **negative fixture**: the v1 bug (Danger
 pinned at a measured 33% fill by tick-count ratcheting) reproduced against the v1
 scripts, where 19 of these checks fail, and passing here.
 

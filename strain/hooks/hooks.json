@@ -1,5 +1,5 @@
 {
-  "description": "strain: counts tool calls per session and fires the strain check on its own; opens each session's counter and carries a compaction as escalation.",
+  "description": "strain: counts tool calls per session and fires the strain check on its own; opens each session's counter, hands its id to the agent's shell, and states a compaction (never a tier floor).",
   "hooks": {
     "PostToolUse": [
       {
