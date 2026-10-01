@@ -24,7 +24,8 @@ import argparse, json, sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (state_lock, state_dir, session_path, load, save, blank, now_iso,
                             resolve_sid, resolve_for_write, signals_of, signal_floor,
-                            pattern_note, floor_tier, why_unsaved)
+                            pattern_note, floor_tier, why_unsaved,
+                            write_hint)
 
 
 def main(argv):
@@ -83,7 +84,7 @@ def main(argv):
     saved = save(path, st)
     lock.__exit__()
     if not saved:
-        sys.stderr.write("could not write state: %s\n" % why_unsaved(path))
+        sys.stderr.write("could not write state: %s%s\n" % (why_unsaved(path), write_hint(path)))
         return 1
 
     bits = ["recorded %s signal '%s' for session %s (resolved by %s)"

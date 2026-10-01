@@ -194,10 +194,12 @@ session will work the same project:
 bash <strain>/scripts/strain-sign.sh --agent <your-name> [--ledger ./Log.strain]
 ```
 
-The FIRST sign of a session prints a one-line **receipt** — host, session, where the
-reading comes from and when, its mode, the window and where that came from, whether the
-state file and the ledger can be written. **Relay it to the user verbatim** (on Claude
-Code the hook also shows it to them itself). `strain-sign.sh --receipt` reprints it.
+The FIRST sign of a session prints one plain sentence for the user — whether strain is
+on and how full this conversation is. **Relay that sentence to the user as it is** (on
+Claude Code the hook also shows it to them itself). The details — host, reading source,
+where the window came from, whether the hooks are saving, whether your shell can write —
+go to stderr for you; use them to troubleshoot, do not paste them at the user.
+`strain-sign.sh --receipt` repeats both.
 
 With a ledger (an append-only account book: boot-sign and wrap rows), the FIRST sign of a
 session also reports the previous session of the same agent — its tool calls,
@@ -246,8 +248,10 @@ tagged. If you use both, strain reads what throughline already records.
   --ctx-used <n> --ctx-source "<where>"`). A fed reading is labelled agent-fed with its
   source — never report it as something strain measured itself.
 - **Record commands write outside the project** (`~/.local/state/strain`). A sandboxed
-  host may ask for permission: ask the user, do not escalate on your own — or set
-  `STRAIN_STATE_DIR` to a folder inside the project.
+  host may refuse them: ask the user to allow writing to that folder, do not escalate on
+  your own. The hooks are not affected — they keep saving. Set `STRAIN_STATE_DIR` to
+  another folder only if the host's hooks get it too; set in your shell alone, your
+  records and the hooks' counts end up in two different folders.
 - **Thresholds are guesses** until you retune them. They came from one agent-and-user pair
   over a long run; yours will differ.
 - **The soft signals are judgement calls.** Counting them honestly is the whole job; a

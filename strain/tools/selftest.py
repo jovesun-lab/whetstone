@@ -454,32 +454,51 @@ def section_080(tmp):
           ctx_of(ddir, sd).get("mode") == "estimated" and ctx_of(ddir, sd).get("tokens") == 1000,
           ctx_of(ddir, sd))
 
-    # ---- B4 · the receipt -----------------------------------------------------------------
+    # ---- B4 · the receipt (0.8.1: one plain sentence for the user; details for the agent) ---
+    TECH = ("window", "transcript", "model", "ledger", "state", "hint", "·", "host", "token")
+
+    def plain_ok(line):
+        return bool(line) and not any(w in line for w in TECH)
+
+    def user_line(out):
+        return next((l for l in out.splitlines() if l.startswith("Strain ")
+                     and not l.startswith("Strain ·") and not l.startswith("Strain receipt")), "")
+
     rcd = os.path.join(tmp, "b4")
     sr2 = U(50)
     tick(rcd, sr2, n=1000, transcript=cc_transcript(tmp, sr2, 104000))
     out, err, rc = run("_strain_sign.py", None, ["--agent", "ana", "--session", sr2],
                        {"STRAIN_STATE_DIR": rcd})
-    check("0.8.0 B4: the first sign prints the receipt in plain words",
-          rc == 0 and "Strain receipt" in out and "host Claude Code" in out
-          and "session %s" % sr2[:8] in out and "reading Claude transcript" in out
-          and "window 1M (model hint)" in out and "state saved" in out
-          and "/" not in out and "--" not in out, (rc, out))
+    ul = user_line(out)
+    check("0.8.1 (was 0.8.0 B4: the receipt line on stdout): the first sign tells the user one"
+          " plain sentence", rc == 0 and ul.startswith("Strain is on. This conversation is 10% full")
+          and plain_ok(ul) and "Strain receipt" not in out, (rc, out))
+    check("0.8.1: ... and the details go to the agent (stderr)",
+          "Strain receipt" in err and "host Claude Code" in err and "session %s" % sr2[:8] in err
+          and "reading Claude transcript" in err and "window 1M (model hint)" in err
+          and "hooks saving" in err, err)
     out2, _, _ = run("_strain_sign.py", None, ["--agent", "ana", "--session", sr2],
                      {"STRAIN_STATE_DIR": rcd})
-    out3, _, rc3 = run("_strain_sign.py", None, ["--receipt", "--session", sr2],
-                       {"STRAIN_STATE_DIR": rcd})
+    out3, err3, rc3 = run("_strain_sign.py", None, ["--receipt", "--session", sr2],
+                          {"STRAIN_STATE_DIR": rcd})
     check("0.8.0 B4: a re-sign does not repeat it; --receipt reprints it any time",
-          "Strain receipt" not in out2 and rc3 == 0 and "Strain receipt" in out3, (out2, out3))
+          not user_line(out2) and rc3 == 0 and user_line(out3).startswith("Strain is on.")
+          and "Strain receipt" in err3, (out2, out3, err3))
     os.chmod(os.path.join(rcd, "sessions", sr2 + ".json"), 0o444)
     os.chmod(os.path.join(rcd, "sessions"), 0o555)
     try:
-        out4, _, _ = run("_strain_sign.py", None, ["--receipt", "--session", sr2],
-                         {"STRAIN_STATE_DIR": rcd})
+        out4, err4, _ = run("_strain_sign.py", None, ["--receipt", "--session", sr2],
+                            {"STRAIN_STATE_DIR": rcd})
+        _, err5, rc5 = lvl(rcd, ["Mid", "--session", sr2])
     finally:
         os.chmod(os.path.join(rcd, "sessions"), 0o755)
         os.chmod(os.path.join(rcd, "sessions", sr2 + ".json"), 0o644)
-    check("0.8.0 B4: an unwritable state file shows as FAILED", "state write FAILED" in out4, out4)
+    check("0.8.1 (was 0.8.0 B4: an unwritable state file shows as FAILED): a shell that cannot"
+          " write is not 'strain cannot save' -- the hooks still save",
+          user_line(out4).startswith("Strain is on.") and "can't save" not in out4
+          and "hooks saving" in err4 and "this shell cannot write" in err4, (out4, err4))
+    check("0.8.1: a record refused for permission says to ask the user, and that the hooks are"
+          " not affected", rc5 == 1 and "ask the user" in err5 and "hooks" in err5, (rc5, err5))
     sm = U(51)
     tp = cc_transcript(tmp, sm, 104000)
     o1, _, _ = tick_raw(rcd, sm, n=1, transcript=tp, extra_env=CC)
@@ -488,8 +507,9 @@ def section_080(tmp):
         m1, m2 = json.loads(o1).get("systemMessage", ""), json.loads(o2).get("systemMessage", "")
     except Exception:
         m1 = m2 = ""
-    check("0.8.0 B4: on Claude Code the hook shows the receipt to the user itself, once",
-          "Strain receipt" in m1 and not m2, (m1, m2))
+    check("0.8.1 (was 0.8.0 B4: the hook shows the receipt line): the hook shows the user one"
+          " plain sentence, once", m1.startswith("Strain is on. This conversation is 10% full")
+          and plain_ok(m1) and not m2, (m1, m2))
     sm2 = U(52)
     plain = os.path.join(tmp, "plain", sm2 + ".jsonl")
     os.makedirs(os.path.dirname(plain), exist_ok=True)
@@ -503,7 +523,24 @@ def section_080(tmp):
         m4 = json.loads(o4).get("systemMessage", "")
     except Exception:
         m4 = ""
-    check("0.8.0 B4: a new UNMEASURED is told to the user by the hook", "not measured" in m4, m4)
+    check("0.8.1 (was 0.8.0 B4: 'not measured' + the kind): a new UNMEASURED is told in plain words",
+          m4 == "Strain can't tell how full this conversation is right now, so it's only counting"
+          " the agent's work and mistakes.", m4)
+    sm3 = U(53)
+    tp3 = cc_transcript(tmp, sm3, 104000)
+    tick_raw(rcd, sm3, n=1000, transcript=tp3, extra_env=CC)
+    os.chmod(os.path.join(rcd, "sessions"), 0o555)
+    try:
+        o5, _, _ = tick_raw(rcd, sm3, n=1, transcript=tp3, extra_env=CC)
+    finally:
+        os.chmod(os.path.join(rcd, "sessions"), 0o755)
+    try:
+        m5 = json.loads(o5).get("systemMessage", "")
+    except Exception:
+        m5 = ""
+    check("0.8.1: a hook that cannot save tells the user in plain words",
+          m5 == "Strain can't save on this computer, so it isn't keeping track of this"
+          " conversation. Your agent has the details.", m5)
 
     # ---- S1 · a bug report the user sends by hand -----------------------------------------
     rp = os.path.join(tmp, "s1")
@@ -614,6 +651,13 @@ def section_080(tmp):
           "## Where strain writes" in readme and "STRAIN_STATE_DIR" in readme, "")
     check("0.8.0 A2: SKILL lists UNMEASURED as a recordable tier",
           "strain-level.sh UNMEASURED" in skill, "")
+    check("0.8.1: the state-folder advice keeps hooks and records in ONE folder",
+          "or set `STRAIN_STATE_DIR` to a folder inside the project for that host" not in readme
+          and "`STRAIN_STATE_DIR` to a folder inside the project." not in skill
+          and "only if the host's hooks get it too" in readme
+          and "only if the host's hooks get it too" in skill, "")
+    check("0.8.1: README says where the notice shows and to restart after an update",
+          "received a notice" in readme and "restart the host" in readme, "")
 
 
 def main():

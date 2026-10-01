@@ -33,7 +33,8 @@ import argparse, json, os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (state_dir, session_path, load, save, blank,
                             now_iso, touch_index, read_payload, log_model, state_lock,
-                            settle_window, why_unsaved, user_messages_on)
+                            settle_window, why_unsaved, user_messages_on,
+                            SAVE_FAILED_LINE)
 from _strain_tick import caps_calibration_line
 import _strain_context as ctxmod
 
@@ -142,7 +143,7 @@ def main():
             "additionalContext": "STRAIN STATE -- " + " ".join(bits),
         }}
         if unsaved and user_messages_on(st.get("substrate")):
-            out["systemMessage"] = "Strain: state write FAILED -- %s." % unsaved
+            out["systemMessage"] = SAVE_FAILED_LINE
         sys.stdout.write(json.dumps(out))
     return 0
 

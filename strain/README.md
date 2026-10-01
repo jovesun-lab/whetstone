@@ -200,18 +200,28 @@ named. With no key at all, the record is **refused** (exit 2) with up to three c
 sessions and a ready command for each — it never picks one. Reads (`--get`, `--show`,
 `--list`, `--status`, `--receipt`) may still guess, and say "guessed" when they do.
 
-**The receipt.** The first sign of a session prints one line saying what strain sees, and
-`strain-sign.sh --receipt` reprints it any time:
+**What you see, and what your agent sees.** The first sign of a session tells you one
+plain sentence, and `strain-sign.sh --receipt` repeats it any time:
 
 ```
-Strain receipt — host Claude Code · session 0a8e0001 · reading Claude transcript at 09-30 18:15 · measured · window 1M (model hint) · state saved · no ledger
+Strain is on. This conversation is 10% full — strain will tell you when it's time to wrap up and start fresh.
 ```
 
-On Claude Code the hook shows that line to you itself, once per session (the host's
-`systemMessage`), along with two other things that must not depend on the agent passing
-them on: a state file that cannot be saved, and a reading that has just become
-`UNMEASURED`. `STRAIN_USER_MESSAGES=off` turns this off. On other hosts, the skill asks the
-agent to relay the receipt verbatim.
+The agent gets the details on the side — host, session, where the reading comes from,
+where the window came from, whether the hooks are saving, whether its own shell can write
+(0.8.1; 0.8.0 showed users the agent's version, which was correct and unreadable):
+
+```
+Strain receipt — host Claude Code · session 0a8e0001 · reading Claude transcript at 09-30 18:15 · measured · window 1M (model hint) · hooks saving (last 09-30 18:15) · this shell can write · no ledger
+```
+
+On Claude Code the hook shows you the sentence itself, once per session (the host's
+`systemMessage`). In the desktop app it sits folded into that step's title as
+**"received a notice"** — open the step to read it. Two other plain sentences use the
+same channel, because they must not depend on the agent passing them on: when strain
+can't tell how full the conversation is, and when it can't save on this computer.
+`STRAIN_USER_MESSAGES=off` turns all three off. On other hosts, the skill asks the agent
+to relay the sentence as it is.
 
 ## Where strain writes
 
@@ -223,8 +233,14 @@ agent (`ledgers.json`) or by product · model (`models.json`). A selftest check 
 scenario and fails if a file appears that no reader could attribute.
 
 - **Sandboxed hosts** (Codex, for one) may block writes outside the project and ask for
-  permission when a record command runs. Ask the user rather than escalating on your own —
-  or set `STRAIN_STATE_DIR` to a folder inside the project for that host.
+  permission when a record command runs. The hooks are not affected — the host runs them
+  and they keep saving; only the agent's own record commands are refused. Ask the user to
+  allow writing to strain's folder rather than escalating on your own. Moving the folder
+  with `STRAIN_STATE_DIR` works only if the host's hooks get it too: set in the agent's
+  shell alone, the records land in one folder and the hooks keep reading another.
+- **After updating the plugin, restart the host** before you keep working. Some hosts
+  delete the old version's files on update while the running session still points at
+  them, and every tool call then reports a failing hook until the restart.
 - **A save that fails is said**, never swallowed: the tick says so once (and on Claude
   Code shows it to the user), the boot says so, and the next saved reading notes the gap.
 - The project **ledger** (`Log.strain`, when you sign with one) is the only file strain
@@ -301,8 +317,8 @@ STRAIN_SESSION=<session-id> bash <plugin>/scripts/strain-sign.sh --agent ana --l
 `~/.claude/plugins/cache/whetstone/strain/<version>`). The key is required
 (0.8.0): without it the sign is refused and lists the candidate sessions with a
 ready command for each — it no longer picks "the session this folder saw last".
-The stdout lines — `Strain · Owner: ana — signed (…)` and the `Strain receipt`
-line — are the proof: paste them back to the agent and the session is signed.
+The stdout lines — `Strain · Owner: ana — signed (…)` and the plain `Strain is on …`
+sentence — are the proof: paste them back to the agent and the session is signed.
 Until then the session simply stays unsigned: measured, but part of no chain.
 
 ## What it counts
@@ -377,7 +393,7 @@ the command failed in the agent's own shell.)
 | `strain-wrap.sh --label "…" [--with-debt]` | stamp this session wrapped / handed off; resets nothing; books a `wrap` row when signed with a ledger |
 | `strain-wrap.sh --status` | show this session's wrap state |
 | `strain-sign.sh --agent <name> [--ledger <path>]` | declare who works this session; with a ledger, book boot-sign/wrap rows and report the previous session of the same agent; the first sign prints the receipt |
-| `strain-sign.sh --receipt` | reprint this session's receipt |
+| `strain-sign.sh --receipt` | repeat the user's sentence (stdout) and the agent's details (stderr) |
 
 Every record command needs this session's key (see *Which session a record lands in*);
 the printed commands carry it.
@@ -402,7 +418,7 @@ exactly like a check that is working fine and always says Healthy.
 | `STRAIN_DRIFT_GLANCE` | `off` drops the tick's goal-drift glance (a non-flooring ask to check your task track for a side task outgrowing the marked MAIN goal — pairs with throughline's convention; drift is a note, never a tier input) | `on` |
 | `STRAIN_NO_MODEL_LOG` | stop recording which model ran which session | unset |
 | `STRAIN_SESSION` | this session's key for record commands | printed in every tick; exported into the shell on Claude Code; records refuse without a key |
-| `STRAIN_USER_MESSAGES` | `off` stops strain showing its receipt and failure notices to the user directly (Claude Code) | `on` |
+| `STRAIN_USER_MESSAGES` | `off` stops strain showing its plain sentences to the user directly (Claude Code) | `on` |
 | `CODEX_HOME` | where Codex keeps its logs, if not `~/.codex` | `~/.codex` |
 
 **Three numbers are yours to fill in — the defaults are honest starting points, not
@@ -463,7 +479,7 @@ requires the other.
 python3 tools/selftest.py -v
 ```
 
-186 checks, host-independent: counting, per-session isolation, the tick firing on schedule
+191 checks, host-independent: counting, per-session isolation, the tick firing on schedule
 and only then, the writer and reader agreeing on one location, wraps that reset nothing
 (and touch no other session), compactions stated but never floored, all three context
 modes plus a fed reading that is scored and kept, model observation (logged on change, a
@@ -473,7 +489,7 @@ printing the same caps as the tick, a printed record command that runs from a pl
 parallel ticks losing no count, the previous-session report, a calibration record ruling
 only its own product · model, the Codex reader (receipts, compaction, model switch, a log
 that names another session), records refusing without a session key, the three kinds of
-UNMEASURED and their next steps, the receipt, a failed save being said, every file strain
+UNMEASURED and their next steps, the plain sentence for the user and the agent's receipt, a failed save being said, every file strain
 writes being one session's own or keyed per entry, and malformed payloads never failing a
 tool call — plus the **negative fixture**: the v1 bug (Danger
 pinned at a measured 33% fill by tick-count ratcheting) reproduced against the v1

@@ -33,7 +33,7 @@ import argparse, json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (TIERS, RECORDABLE, state_dir, session_path, load, save,
                             blank, now_iso, resolve_sid, resolve_for_write, settle_window,
-                            why_unsaved, state_lock)
+                            why_unsaved, write_hint, state_lock)
 import _strain_context as ctxmod
 
 
@@ -112,7 +112,7 @@ def _main(argv, lock_holder):
         st["ctx"] = fed
         st["updated"] = now_iso()
         if not save(path, st):
-            sys.stderr.write("could not write state: %s\n" % why_unsaved(path))
+            sys.stderr.write("could not write state: %s%s\n" % (why_unsaved(path), write_hint(path)))
             return 1
         sys.stdout.write("fill %.1f%% — agent-fed: %s of %s tokens (window: %s)\n"
                          % (fed["pct"], "{:,}".format(int(args.ctx_used)),
@@ -132,7 +132,7 @@ def _main(argv, lock_holder):
         st["noSource"] = {"checked": args.checked.strip(), "at": now_iso()}
         st["updated"] = now_iso()
         if not save(path, st):
-            sys.stderr.write("could not write state: %s\n" % why_unsaved(path))
+            sys.stderr.write("could not write state: %s%s\n" % (why_unsaved(path), write_hint(path)))
             return 1
         sys.stderr.write("recorded: no context source on this host (checked: %s)\n"
                          % args.checked.strip())
@@ -167,7 +167,7 @@ def _main(argv, lock_holder):
     st["last"] = args.tier
     st["updated"] = now_iso()
     if not save(path, st):
-        sys.stderr.write("could not write state: %s\n" % why_unsaved(path))
+        sys.stderr.write("could not write state: %s%s\n" % (why_unsaved(path), write_hint(path)))
         return 1
 
     sys.stdout.write(args.tier)

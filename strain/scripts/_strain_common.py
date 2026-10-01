@@ -777,24 +777,86 @@ def reading_line(ctx):
     return src or "none", str(ctx.get("mode") or "pending")
 
 
-def receipt(st, sdir, path, ledger_state):
-    """The one-line receipt: host · session · reading source · when · mode (+ kind) ·
-    window and where it came from · state file · ledger. stdout-safe: no paths, no flags."""
+def reading_state(ctx):
+    """(kind, why) of a reading that is NOT a usable number, or ("", "") when it is.
+    0.8.0 B3: three kinds, each with its own next step --
+      no source  no log strain can read on this host (and no adapter for it)
+      unusable   a source was read and gave no usable number (no usage lines, a fill
+                 at or past 100%, a window of 0, a log that names another session)
+      stale      a reading voided by a compaction or a model switch"""
+    ctx = ctx or {}
+    mode, pct = ctx.get("mode"), ctx.get("pct")
+    if mode in ("measured", "estimated", "agent-fed") and pct is not None:
+        try:
+            p = float(pct)
+        except Exception:
+            p = -1.0
+        if 0.0 <= p <= 100.0:
+            return "", ""
+        # F6b: a fill past 100% is a broken denominator or a broken count, never a
+        # reading; the used count is still a true LOWER bound.
+        return "unusable", (
+            "fill %s%% is impossible -- at least %s tokens are in use (a lower bound); "
+            "check: the model · the effective window · double counting · the compaction "
+            "boundary" % (pct, "{:,}".format(int(ctx.get("tokens") or 0))))
+    kind = str(ctx.get("kind") or "") or ("stale" if ctx.get("voided") else "no source")
+    return kind, str(ctx.get("why") or "")
+
+
+# ---- 0.8.1: what the USER reads -- one plain sentence, no instrument words ------------
+# 0.8.0 showed users the agent's receipt (host · session · reading source · window and its
+# source · state file · ledger) -- correct, and unreadable to anyone who is not debugging
+# strain. The user needs three things only: is it on, how full is this conversation, does
+# it need me. Everything else is the agent's (details_line, on stderr).
+UNMEASURED_LINE = ("Strain can't tell how full this conversation is right now, so it's only"
+                   " counting the agent's work and mistakes.")
+SAVE_FAILED_LINE = ("Strain can't save on this computer, so it isn't keeping track of this"
+                    " conversation. Your agent has the details.")
+
+
+def user_line(st):
+    ctx = st.get("ctx") if isinstance(st.get("ctx"), dict) else {}
+    kind, _why = reading_state(ctx)
+    if not kind and ctx.get("pct") is not None:
+        pct = max(1, int(round(float(ctx["pct"]))))
+        return ("Strain is on. This conversation is %d%% full — strain will tell you when"
+                " it's time to wrap up and start fresh." % pct)
+    return UNMEASURED_LINE
+
+
+def details_line(st, path, ledger_state):
+    """The agent's receipt: host · session · reading source and time · mode (+ kind) ·
+    window and where it came from · whether the HOOKS are saving · whether THIS shell can
+    write · ledger. 0.8.1: 'can this shell write' and 'is strain saving' are two facts --
+    on a sandboxed host the hooks save fine while the agent's own shell cannot write, and
+    0.8.0 reported that as 'state write FAILED'."""
     ctx = st.get("ctx") if isinstance(st.get("ctx"), dict) else {}
     host = PRODUCT_OF_SUBSTRATE.get(str(st.get("substrate") or ""), "") or \
         ("unrecognised host" if st.get("substrate") else "host not seen yet")
     src, mode = reading_line(ctx)
-    when = str(ctx.get("observedAt") or st.get("updated") or "")
-    when = _short_when(when)
+    when = _short_when(str(ctx.get("observedAt") or st.get("updated") or ""))
     parts = ["host %s" % host, "session %s" % str(st.get("sid") or "?")[:8]]
     parts.append("reading %s%s" % (src, (" at " + when) if (when and src != "none") else ""))
     kind = str(ctx.get("kind") or "")
     parts.append(mode + ((" · " + kind) if kind and mode not in ("measured",) else ""))
     if ctx.get("limit"):
         parts.append("window %s (%s)" % (k_tokens(ctx["limit"]), ctx.get("limitSource") or "?"))
-    parts.append("state saved" if can_write(path) else "state write FAILED")
+    hs = _short_when(str(st.get("hookSavedAt") or ""))
+    parts.append(("hooks saving (last %s)" % hs) if hs else "hooks have not saved yet")
+    parts.append("this shell can write" if can_write(path) else
+                 "this shell cannot write here -- ask the user for permission before recording")
     parts.append(ledger_state)
     return "Strain receipt — " + " · ".join(parts)
+
+
+def write_hint(path):
+    """Appended to a record command's write failure: on a sandboxed host the agent's shell
+    may not write where the hooks do. Never move the folder for the shell alone -- the
+    hooks would keep writing to the old one and never read the records."""
+    if can_write(path):
+        return ""
+    return (" -- if your host runs your commands in a sandbox, ask the user to allow writing"
+            " to this folder; strain's own hooks are not affected, they keep saving")
 
 
 def _short_when(ts):

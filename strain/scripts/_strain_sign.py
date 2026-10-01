@@ -15,11 +15,12 @@ file (suggest `Log.strain` at the project root, gitignored) that receives one
 the project's chain of sessions -- who worked, when, wrapped how -- without ever
 inheriting counters across sessions (one session, one measurement, unchanged).
 
-0.8.0 RECEIPT: the first sign of a session also prints one plain line saying what strain
-sees -- host, session, where the reading comes from and when, its mode, the window and
-where THAT came from, whether the state file and the ledger can be written. Reprint it any
-time with `strain-sign.sh --receipt`. Relay it to the user verbatim: it is the shortest
-proof that strain is running on this session, and what it is measuring.
+0.8.0 RECEIPT (0.8.1: split in two): the first sign prints ONE plain sentence for the
+user on stdout -- is strain on, how full is this conversation -- and the agent's receipt
+on stderr: host, session, where the reading comes from and when, its mode, the window and
+where THAT came from, whether the hooks are saving, whether THIS shell can write, the
+ledger. `strain-sign.sh --receipt` reprints both. Relay the sentence to the user as is;
+keep the details for troubleshooting.
 
 0.7.0 PREVIOUS SESSION REPORT: the FIRST sign of a session with a ledger reads the
 newest EARLIER session of the same agent in that ledger and prints one plain line --
@@ -31,7 +32,8 @@ import argparse, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (state_dir, session_path, load, save, now_iso, resolve_sid,
                             resolve_for_write, ledger_append_why, load_ledgers, save_ledgers,
-                            ledger_rows, signals_of, state_lock, receipt, why_unsaved)
+                            ledger_rows, signals_of, state_lock, user_line, details_line,
+                            why_unsaved, write_hint)
 
 
 def _when(ts):
@@ -114,7 +116,8 @@ def main(argv):
         path = session_path(sdir, sid)
         st = load(path)
         st.setdefault("sid", sid)
-        sys.stdout.write(receipt(st, sdir, path, _ledger_state(st)) + "\n")
+        sys.stdout.write(user_line(st) + "\n")
+        sys.stderr.write(details_line(st, path, _ledger_state(st)) + "\n")
         sys.stderr.write("details: session %s (via %s) · state %s\n" % (sid, how, path))
         return 0
 
@@ -158,7 +161,7 @@ def main(argv):
         if ledger:
             st["ledger"] = ledger
         if not save(path, st):
-            sys.stderr.write("could not write state: %s\n" % why_unsaved(path))
+            sys.stderr.write("could not write state: %s%s\n" % (why_unsaved(path), write_hint(path)))
             return 1
 
     book_note, report, why = "", "", ""
@@ -178,9 +181,11 @@ def main(argv):
     if report:
         sys.stdout.write(report + "\n")
     if first_sign:
-        sys.stdout.write(receipt(st, sdir, path,
-                                 ("ledger booked" if not why else "ledger write FAILED")
-                                 if ledger else "no ledger") + "\n")
+        # 0.8.1: the user's sentence on stdout (relay it as is); the details for the agent.
+        sys.stdout.write(user_line(st) + "\n")
+        sys.stderr.write(details_line(st, path,
+                                      ("ledger booked" if not why else "ledger write FAILED")
+                                      if ledger else "no ledger") + "\n")
     if why:
         sys.stderr.write("ledger not written: %s\n" % why)
     sys.stderr.write("details: session %s (via %s)%s\n"

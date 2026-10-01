@@ -19,7 +19,7 @@ from _strain_common import (TIERS, state_dir, session_path, load, save, blank, n
                             touch_index, read_payload, log_model, floor_tier,
                             signals_of, signal_floor, pattern_note, state_lock,
                             settle_window, k_tokens, why_unsaved, unsaved_marker,
-                            user_messages_on, receipt)
+                            user_messages_on)
 import _strain_context as ctxmod
 
 DEFAULT_N = 10          # tool calls between ticks
@@ -241,30 +241,7 @@ def carry_feed(fed, fresh, st):
 TIER_SLOT = "<Healthy|Mid|High|Warning|Danger|UNMEASURED>"
 
 
-def reading_state(ctx):
-    """(kind, why) of a reading that is NOT a usable number, or ("", "") when it is.
-    0.8.0 B3: three kinds, each with its own next step --
-      no source  no log strain can read on this host (and no adapter for it)
-      unusable   a source was read and gave no usable number (no usage lines, a fill
-                 at or past 100%, a window of 0, a log that names another session)
-      stale      a reading voided by a compaction or a model switch"""
-    ctx = ctx or {}
-    mode, pct = ctx.get("mode"), ctx.get("pct")
-    if mode in ("measured", "estimated", "agent-fed") and pct is not None:
-        try:
-            p = float(pct)
-        except Exception:
-            p = -1.0
-        if 0.0 <= p <= 100.0:
-            return "", ""
-        # F6b: a fill past 100% is a broken denominator or a broken count, never a
-        # reading; the used count is still a true LOWER bound.
-        return "unusable", (
-            "fill %s%% is impossible -- at least %s tokens are in use (a lower bound); "
-            "check: the model · the effective window · double counting · the compaction "
-            "boundary" % (pct, "{:,}".format(int(ctx.get("tokens") or 0))))
-    kind = str(ctx.get("kind") or "") or ("stale" if ctx.get("voided") else "no source")
-    return kind, str(ctx.get("why") or "")
+from _strain_common import reading_state, user_line, UNMEASURED_LINE, SAVE_FAILED_LINE  # noqa: E402  (0.8.1: one home)
 
 
 def procedure(kind, why, st, ctx, sdir):
@@ -419,14 +396,13 @@ def user_message(st, ctx, path, fire):
     if not fire or not user_messages_on(st.get("substrate")):
         return ""
     out = []
-    if not st.get("receiptShown"):
-        out.append(receipt(st, "", path, "ledger joined" if st.get("ledger") else "no ledger"))
-        st["receiptShown"] = now_iso()
     proposed = st.get("_proposed")
-    if proposed == "UNMEASURED" and st.get("lastProposal") != "UNMEASURED":
-        out.append("Strain: this session's context is not measured right now (%s%s)."
-                   % (st.get("_kind") or "no reading",
-                      (": " + st["_why"]) if st.get("_why") else ""))
+    if not st.get("receiptShown"):
+        # 0.8.1: the user gets one plain sentence; the details are the agent's.
+        out.append(user_line(st))
+        st["receiptShown"] = now_iso()
+    elif proposed == "UNMEASURED" and st.get("lastProposal") != "UNMEASURED":
+        out.append(UNMEASURED_LINE)
     if proposed:
         st["lastProposal"] = proposed
     return " ".join(out)
@@ -499,6 +475,7 @@ def main():
     shown = user_message(st, ctx, path, fire)
     for k in ("_proposed", "_kind", "_why"):
         st.pop(k, None)
+    st["hookSavedAt"] = st["updated"]       # 0.8.1: the HOOK's own save, for the receipt
     saved = save(path, st)
     lock.__exit__()
 
@@ -522,7 +499,7 @@ def main():
                 " not be saved (%s); nothing is recorded for this session until it can be."
                 " Tell the user." % why}}
             if user_messages_on(st.get("substrate")):
-                out["systemMessage"] = "Strain: state write FAILED -- %s." % why
+                out["systemMessage"] = SAVE_FAILED_LINE
             sys.stdout.write(json.dumps(out))
         return 0
 

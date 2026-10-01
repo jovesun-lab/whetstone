@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.8.1 — 2026-09-30
+
+**What the user reads is one plain sentence; the details are the agent's.** Found the same
+night 0.8.0 shipped, by its first users on Claude Code and Codex.
+
+- **The user gets one plain sentence.** 0.8.0 showed users the agent's receipt — host ·
+  session · reading source · window and where it came from · state file · ledger — correct,
+  and unreadable unless you are debugging strain. The user now reads one of three
+  sentences: "Strain is on. This conversation is N% full — strain will tell you when it's
+  time to wrap up and start fresh." · "Strain can't tell how full this conversation is
+  right now, so it's only counting the agent's work and mistakes." · "Strain can't save on
+  this computer, so it isn't keeping track of this conversation. Your agent has the
+  details." The first sign prints the sentence on stdout (relay it as is) and the details
+  on stderr; on Claude Code the hook shows the same sentences itself.
+- **"Can this shell write" is not "is strain saving".** On a sandboxed host the hooks — run
+  by the host — kept saving while the agent's own shell could not write, and the 0.8.0
+  receipt reported that as "state write FAILED", which sent the agent chasing a fault that
+  was not there. The agent's receipt now says both: "hooks saving (last HH:MM)" and
+  "this shell can write" / "this shell cannot write here -- ask the user for permission".
+  A record refused for permission says the same.
+- **Corrected advice: one folder for hooks and records.** 0.8.0's README and skill said a
+  sandboxed host could set `STRAIN_STATE_DIR` to a folder inside the project. Set in the
+  agent's shell alone, that splits the data: the records land in the new folder and the
+  hooks keep reading the old one. Now: ask the user to allow writing to strain's folder;
+  move it only if the host's hooks get the same setting.
+- **Docs.** In the Claude Code desktop app the sentence sits folded into the step's title
+  as "received a notice". After updating the plugin, restart the host: some hosts delete
+  the old version's files while the running session still points at them, and every tool
+  call then reports a failing hook until the restart.
+
+Selftest 186 → 191: 5 new checks, 5 rewritten (named "0.8.1 (was …)").
+
+
 ## 0.8.0 — 2026-09-30
 
 **Codex as a known host, readings that say what they are, and records that never land in

@@ -20,7 +20,7 @@ import argparse, json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (state_dir, session_path, load, save, now_iso, resolve_sid,
                             resolve_for_write, ledger_append_why, signals_of, state_lock,
-                            why_unsaved)
+                            why_unsaved, write_hint)
 
 
 def main(argv):
@@ -64,7 +64,7 @@ def main(argv):
         st["wrapTick"] = tick
         st["updated"] = ts
         if not save(path, st):
-            sys.stderr.write("could not write state: %s\n" % why_unsaved(path))
+            sys.stderr.write("could not write state: %s%s\n" % (why_unsaved(path), write_hint(path)))
             return 1
     # a signed session with a ledger also books the stamp -- one row beside its boot-sign
     ledger = str(st.get("ledger") or "")
