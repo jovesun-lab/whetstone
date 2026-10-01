@@ -45,6 +45,10 @@ import glob, json, os, re
 
 DEFAULT_LIMIT = 200000          # context window, tokens; override with STRAIN_CONTEXT_LIMIT
 TAIL_BYTES = 262144             # how much of the transcript tail to scan for the last usage
+# 0.8.2: ...and how far back to keep looking when the tail holds no usage line (a big
+# pasted image can sit between the end and the newest usage). Bounded: past 16 MB the
+# reading is left to the caller's rules rather than read on every tool call.
+TAIL_WINDOWS = (TAIL_BYTES, 1 << 20, 4 << 20, 16 << 20)
 HEAD_LINES = 400                # how far into the head to look for the first usage
 
 # Model-name -> window-size hints, checked as substrings of the model id. The host does
@@ -184,20 +188,25 @@ def read_usage(path, want_baseline=True):
     model = ""
     try:
         size = os.path.getsize(path)
-        with open(path, "rb") as f:
-            if size > TAIL_BYTES:
-                f.seek(-TAIL_BYTES, 2)
-                chunk = f.read().decode("utf-8", "replace")
-                lines = chunk.split("\n")[1:]      # drop the partial first line
-            else:
-                lines = f.read().decode("utf-8", "replace").split("\n")
-        for line in reversed(lines):
-            if not line.strip():
-                continue
-            got, m = _usage_of(line)
-            if got is not None:
-                current = got
-                model = m
+        # 0.8.2: widen the window until a usage line is found. One big line right after
+        # the newest usage line -- a pasted screenshot is ~0.3-0.5 MB -- used to push it
+        # out of a fixed 256 KB tail, and the tick fell back to a whole-file estimate.
+        for want in TAIL_WINDOWS:
+            with open(path, "rb") as f:
+                if size > want:
+                    f.seek(-want, 2)
+                    lines = f.read().decode("utf-8", "replace").split("\n")[1:]  # drop partial
+                else:
+                    lines = f.read().decode("utf-8", "replace").split("\n")
+            for line in reversed(lines):
+                if not line.strip() or '"usage"' not in line:
+                    continue
+                got, m = _usage_of(line)
+                if got is not None:
+                    current = got
+                    model = m
+                    break
+            if current is not None or size <= want:
                 break
     except Exception:
         return None, None, ""

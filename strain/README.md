@@ -232,12 +232,17 @@ under `reports/`) or keyed per entry — by session (`index.json`, `model-log.js
 agent (`ledgers.json`) or by product · model (`models.json`). A selftest check walks a full
 scenario and fails if a file appears that no reader could attribute.
 
-- **Sandboxed hosts** (Codex, for one) may block writes outside the project and ask for
-  permission when a record command runs. The hooks are not affected — the host runs them
-  and they keep saving; only the agent's own record commands are refused. Ask the user to
-  allow writing to strain's folder rather than escalating on your own. Moving the folder
-  with `STRAIN_STATE_DIR` works only if the host's hooks get it too: set in the agent's
-  shell alone, the records land in one folder and the hooks keep reading another.
+- **Sandboxed hosts** (Codex, for one) may refuse the agent's record commands, because they
+  write outside the project. The hooks are not affected — the host runs them and they keep
+  saving. When a record is refused, the agent:
+  1. raises the host's own permission prompt (or asks in chat if there is none): allow
+     writing to strain's folder — only that folder;
+  2. waits for the answer, and if allowed, runs the same command again with that
+     permission;
+  3. checks with `strain-sign.sh --receipt` that it now says "this shell can write".
+  It never approves the permission itself and never widens it. Moving the folder with
+  `STRAIN_STATE_DIR` works only if the host's hooks get it too: set in the agent's shell
+  alone, the records land in one folder and the hooks keep reading another.
 - **After updating the plugin, restart the host** before you keep working. Some hosts
   delete the old version's files on update while the running session still points at
   them, and every tool call then reports a failing hook until the restart.
@@ -479,7 +484,7 @@ requires the other.
 python3 tools/selftest.py -v
 ```
 
-191 checks, host-independent: counting, per-session isolation, the tick firing on schedule
+198 checks, host-independent: counting, per-session isolation, the tick firing on schedule
 and only then, the writer and reader agreeing on one location, wraps that reset nothing
 (and touch no other session), compactions stated but never floored, all three context
 modes plus a fed reading that is scored and kept, model observation (logged on change, a

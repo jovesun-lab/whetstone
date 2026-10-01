@@ -659,6 +659,82 @@ def section_080(tmp):
     check("0.8.1: README says where the notice shows and to restart after an update",
           "received a notice" in readme and "restart the host" in readme, "")
 
+def section_082(tmp):
+    """0.8.2: found live the night 0.8.1 shipped."""
+    def dec(out):
+        try:
+            return json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        except Exception:
+            return out
+
+    # ---- a big line (a pasted screenshot) after the last usage line --------------------
+    # The reader looked at the last 256 KB only; one ~256 KB line right after the newest
+    # usage line pushed it out of reach, and the tick fell back to a whole-file estimate
+    # (1.2M of 200k = 620%).
+    rdir = os.path.join(tmp, "r082")
+    sr = U(200)
+    tp = cc_transcript(tmp, sr, 300000)
+    with open(tp, "a") as f:
+        f.write(json.dumps({"type": "user", "message": {"role": "user", "content": [
+            {"type": "image", "source": {"data": "A" * 400000}}]}}) + "\n")
+        f.write(json.dumps({"type": "user", "toolUseResult": "ok"}) + "\n")
+    tick(rdir, sr, n=1, transcript=tp)
+    c = state_of(rdir, sr).get("ctx") or {}
+    check("0.8.2: a big line after the newest usage line does not hide it (reads further back)",
+          c.get("mode") == "measured" and c.get("tokens") == 300002, c)
+
+    # ---- a session that HAD a real reading never falls back to a whole-file estimate ------
+    sk = U(201)
+    tk = cc_transcript(tmp, sk, 300000)
+    tick(rdir, sk, n=1, transcript=tk)
+    with open(tk, "w") as f:                    # same log, no usage line left in it at all
+        for _ in range(3000):
+            f.write(json.dumps({"type": "user", "message": {"role": "user"}}) + "\n")
+    out, _, _ = tick(rdir, sk, n=1, transcript=tk)
+    c = state_of(rdir, sk).get("ctx") or {}
+    check("0.8.2: with no usage line found, a session's last real reading is kept, and says so",
+          c.get("mode") == "measured" and c.get("tokens") == 300002 and c.get("kept")
+          and "kept" in dec(out), (c, dec(out)[:300]))
+
+    # ---- refused for permission: the hint is a numbered procedure -------------------------
+    pdir = os.path.join(tmp, "p082")
+    sp = U(202)
+    tick(pdir, sp, n=1000)
+    os.chmod(os.path.join(pdir, "sessions", sp + ".json"), 0o444)
+    os.chmod(os.path.join(pdir, "sessions"), 0o555)
+    try:
+        _, err, rc = run("_strain_level.py", None, ["Mid", "--session", sp], {"STRAIN_STATE_DIR": pdir})
+    finally:
+        os.chmod(os.path.join(pdir, "sessions"), 0o755)
+        os.chmod(os.path.join(pdir, "sessions", sp + ".json"), 0o644)
+    check("0.8.2: a record refused for permission prints numbered steps: raise the host's"
+          " permission prompt, re-run once allowed, check the receipt",
+          rc == 1 and "1)" in err and "2)" in err and "3)" in err and "permission prompt" in err
+          and "--receipt" in err and "do not approve it yourself" in err, err)
+
+    # ---- an unsigned session is told, once, to sign ---------------------------------------
+    udir = os.path.join(tmp, "u082")
+    su = U(203)
+    o1, _, _ = tick(udir, su, n=1)
+    o2, _, _ = tick(udir, su, n=1)
+    check("0.8.2: the first strain check of an unsigned session says how to sign, once",
+          "not signed" in dec(o1) and "strain-sign.sh" in dec(o1) and "not signed" not in dec(o2),
+          (dec(o1)[-700:], dec(o2)[-300:]))
+    sv = U(204)
+    run("_strain_sign.py", None, ["--agent", "ana", "--session", sv], {"STRAIN_STATE_DIR": udir})
+    o3, _, _ = tick(udir, sv, n=1)
+    check("0.8.2: a signed session is not told to sign", "not signed" not in dec(o3), dec(o3)[-300:])
+
+    # ---- agent-facing rules are steps, not principles -------------------------------------
+    skill = open(os.path.join(os.path.dirname(HERE), "skills", "strain", "SKILL.md")).read()
+    readme = open(os.path.join(os.path.dirname(HERE), "README.md")).read()
+    check("0.8.2: no rule an agent can read as 'never ask for permission'",
+          "escalat" not in skill and "escalating on your own" not in readme, "")
+    check("0.8.2: SKILL carries numbered procedures for start, permission, refusal and wrap",
+          all(h in skill for h in ("## At the start of a session", "## When a record command is refused",
+                                   "## When the tick fires", "## At the wrap"))
+          and "permission prompt" in skill, "")
+
 
 def main():
     tmp = tempfile.mkdtemp(prefix="strain-selftest-")
@@ -1424,6 +1500,7 @@ def main():
         check("0.7.0 B4: the hostloop transcript shape -> cowork", got == "cowork", got)
 
         section_080(tmp)
+        section_082(tmp)
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

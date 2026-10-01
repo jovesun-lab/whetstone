@@ -188,6 +188,9 @@ def describe_ctx(ctx):
     """The MEASURED line; 0.7.0 adds the agent-fed reading (source, and what was added
     since the feed from transcript growth)."""
     ctx = ctx or {}
+    if ctx.get("kept"):
+        return (ctxmod.describe(dict(ctx, kept=None)) + " -- kept from the last check: no newer"
+                " usage line was found in the log")
     if ctx.get("mode") == "agent-fed" and ctx.get("tokens") is not None:
         k = lambda n: ("%gM" % (n / 1000000.0)) if n >= 1000000 else ("%.0fk" % (n / 1000.0))
         line = ("context %s/%s (%.0f%%), AGENT-FED: %s tokens read from %s"
@@ -245,8 +248,9 @@ from _strain_common import reading_state, user_line, UNMEASURED_LINE, SAVE_FAILE
 
 
 def procedure(kind, why, st, ctx, sdir):
-    """The next step for an UNMEASURED reading, per kind -- a procedure that ends in a
-    record, not a hint. Host-neutral: no host-only terms."""
+    """The next step for an UNMEASURED reading, per kind. 0.8.2: numbered STEPS that end
+    in a record -- a principle ('look first', 'do not escalate') was read literally, and
+    wrongly, by a weaker model. Host-neutral: no host-only terms."""
     feed = act_command("strain-level.sh", st, sdir,
                        "<tier> --ctx-used <tokens> --ctx-source '<where you read it>'"
                        " --ctx-provenance host-reported|agent-estimated")
@@ -255,32 +259,33 @@ def procedure(kind, why, st, ctx, sdir):
         ns = st.get("noSource") if isinstance(st.get("noSource"), dict) else {}
         if ns.get("checked"):
             return (" No context measurement on this host (no source; checked: %s). Counting"
-                    " behaviour only -- feed a number if the host starts showing one: `%s`."
+                    " behaviour only -- if the host starts showing a number, feed it: `%s`."
                     % (ns["checked"], feed))
         return (" No context measurement on this host -- UNMEASURED · no source (%s). UNMEASURED"
-                " is not Healthy. Look for the number your host keeps: a session or usage log,"
-                " a status or usage command, a usage API, the host's settings or status pane."
-                " Then end with ONE record: a feed `%s`, or `%s`. This line repeats until one"
-                " exists." % (why or "no log strain can read",
-                              feed, act_command("strain-level.sh", st, sdir,
-                                                "UNMEASURED --no-source --checked"
-                                                " '<the places you looked>'")))
+                " is not Healthy. STEPS: 1) Look where your host keeps usage: a session or usage"
+                " log, a status or usage command, a usage API, its settings or status pane."
+                " 2) Found a number: record it with `%s`. 3) Found nothing: record that with"
+                " `%s`. This checklist repeats until step 2 or step 3 is done."
+                % (why or "no log strain can read", feed,
+                   act_command("strain-level.sh", st, sdir,
+                               "UNMEASURED --no-source --checked '<the places you looked>'")))
     if kind == "unusable":
         if why.startswith("fill "):
-            return (" NOT MEASURED -- UNMEASURED · unusable: %s. A fill past 100%% means"
-                    " strain's arithmetic is off, not your session: tell the user, and offer"
-                    " a bug report they send by hand (nothing is sent automatically): `%s`."
-                    " Meanwhile feed the host's own number if it shows one: `%s`."
-                    % (why, report, feed))
-        return (" NOT MEASURED -- UNMEASURED · unusable: %s. Read the number from your host's"
-                " own interfaces (a status or usage command, its usage pane, its log) and"
-                " feed it with its provenance: `%s`. If the number lives in a durable log,"
-                " draft an adapter proposal -- where the log is, which fields carry the"
-                " usage, one redacted sample line -- with `%s`; never edit the installed"
-                " plugin." % (why, feed, report))
+            return (" NOT MEASURED -- UNMEASURED · unusable: %s. STEPS: 1) Tell the user that"
+                    " strain's own arithmetic is off, not their session, and quote the used count"
+                    " as a lower bound. 2) Offer a bug report they send by hand: run `%s`, tell"
+                    " them where the draft is, and that nothing was sent. 3) If your host shows"
+                    " its own usage number, feed it: `%s`." % (why, report, feed))
+        return (" NOT MEASURED -- UNMEASURED · unusable: %s. STEPS: 1) Read the number from your"
+                " host's own interfaces (a status or usage command, its usage pane, its log)."
+                " 2) Feed it with its provenance: `%s`. 3) If the number lives in a durable log,"
+                " draft an adapter proposal -- where the log is, which fields carry the usage,"
+                " one redacted sample line -- with `%s`. Do not edit the installed plugin."
+                % (why, feed, report))
     if kind == "stale":
         if ctx.get("fedVoid") or ctx.get("source") == "agent-fed":
-            return (" NOT MEASURED -- UNMEASURED · stale: %s: `%s`." % (why, feed))
+            return (" NOT MEASURED -- UNMEASURED · stale: %s. STEP: record a new reading: `%s`."
+                    % (why, feed))
         if ctx.get("source") in ("codex-rollout", "claude-transcript"):
             return (" NOT MEASURED -- UNMEASURED · stale: %s. Nothing to do: this host"
                     " measures itself, and the next request brings a fresh reading." % why)
@@ -339,6 +344,12 @@ def build_directive(n, st, ctx, substrate="", sdir=""):
         bits.append(" " + " ".join(directives))
     if kind:
         bits.append(procedure(kind, why, st, ctx, sdir))
+    if not st.get("agent") and not st.get("signNudged"):
+        # 0.8.2: said once per session, as a step, not as a principle to remember.
+        st["signNudged"] = now_iso()
+        bits.append(" This session is not signed yet. Step: sign it now with `%s`, then tell"
+                    " the user the one sentence it prints." % act_command(
+                        "strain-sign.sh", st, sdir, "--agent '<your name>'"))
     if st.pop("_legacyNote", None):
         bits.append(" NOTE: an old calibration record (calibration.json) has no model, so it"
                     " rules no session -- re-record the window per product and model:"
@@ -373,19 +384,17 @@ def build_directive(n, st, ctx, substrate="", sdir=""):
     return (
         "\U0001FA7A STRAIN TICK (host-fired every %d tool call%s)."
         " PROPOSED TIER: %s (%s); carried: %s.%s%s%s"
-        " Confirm or adjust, then record it:"
-        " `%s`."
-        " Adjust UP only for a NEW hard signal the state file has not seen -- record it"
-        " first (`%s`): an error that ESCAPED to"
-        " the user floors the tier; one you caught and fixed pre-delivery is a working"
-        " immune system and moves nothing (say so, don't tier on it). Never escalate"
-        " because ticks accumulated or because the previous check was high -- fill and"
-        " fresh signals are the only ladders. An unrecorded tier is how this reading"
-        " silently stays at its first value.%s [%s]"
+        # 0.8.2: the record procedure is numbered steps, not prose to interpret.
+        " STEPS: 1) If an error of yours reached the user since the previous strain check and is not"
+        " recorded yet, record it first: `%s` (one you caught and fixed before anyone saw it:"
+        " use --caught instead -- it moves nothing). 2) Keep the proposed tier, or change it"
+        " only because of step 1 -- never because checks piled up or the last tier was high"
+        " -- then record it: `%s`. 3) Tell the user in the shape for this tier. A tier that"
+        " is not recorded stays at its first value.%s [%s]"
         % (n, "" if n == 1 else "s", slot, basis, carried, decay, "".join(bits),
            wrap_line(st),
-           act_command("strain-level.sh", st, sdir, TIER_SLOT),
-           act_command("strain-signal.sh", st, sdir, "<kind> --caught|--escaped"), glance,
+           act_command("strain-signal.sh", st, sdir, "<kind> --escaped"),
+           act_command("strain-level.sh", st, sdir, TIER_SLOT), glance,
            caps_calibration_line(ctx, substrate or st.get("substrate", "")))
     )
 
@@ -442,11 +451,21 @@ def main():
     # reading stands until a real measurement or a newer feed replaces it; a fed reading
     # that a compaction voided stays voided until a new feed (0.8.0: only a FED void is
     # carried -- a host that measures itself re-measures on its own).
+    comp_now = int(st.get("compactions", 0) or 0)
     if ctx.get("mode") != "measured":
         if prev_ctx.get("mode") == "agent-fed":
             ctx = carry_feed(prev_ctx, ctx, st)
         elif prev_ctx.get("mode") == "unmeasured" and prev_ctx.get("fedVoid"):
             ctx = dict(prev_ctx)
+        elif (ctx.get("mode") == "estimated" and prev_ctx.get("mode") == "measured"
+              and prev_ctx.get("transcript") == ctx.get("transcript")
+              and int(prev_ctx.get("atCompactions", comp_now) or 0) == comp_now):
+            # 0.8.2: this session HAD a real reading of this same log and nothing cut the
+            # context since -- keep it (labelled) rather than fall back to a whole-file
+            # byte estimate, which counts everything ever written (620% live, 2026-09-30).
+            ctx = dict(prev_ctx, kept=True)
+    else:
+        ctx["atCompactions"] = comp_now
     # 0.8.0 A1: ONE denominator decision, after measuring (the model is known by now).
     ctx, look = settle_window(ctx, sdir, st.get("substrate", ""))
     st["ctx"] = ctx

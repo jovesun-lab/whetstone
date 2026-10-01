@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.8.2 — 2026-09-30
+
+**A pasted screenshot no longer breaks the reading, and every instruction to the agent is a
+numbered list of steps.** Found the night 0.8.1 shipped.
+
+- **A big line no longer hides the reading.** The Claude transcript reader looked at the
+  last 256 KB only. A pasted screenshot is one line of roughly that size; right after the
+  newest usage line, it pushed that line out of reach, and the tick fell back to an
+  estimate from the whole file's size — 1.2M tokens of a 200k default, 620%. The reader now
+  looks further back (1, 4, then 16 MB) before giving up. And a session that already had a
+  real reading of the same log, with no compaction since, keeps that reading (labelled
+  "kept from the last check") instead of falling back to a whole-file estimate.
+- **Instructions are steps, not principles.** The skill said "ask the user to allow writing
+  to that folder, do not escalate on your own". One agent read that as "never request
+  permission": it asked in chat, never raised its host's permission prompt, and never
+  signed. Every place an agent has to act is now a numbered procedure — at the start of a
+  session, when the tick fires, when strain cannot measure, when a record is refused, at
+  the wrap, before saying strain is missing — and the tick's own directives are numbered
+  steps too. A record refused for permission prints the steps: raise the host's permission
+  prompt, run the command again once allowed, check the receipt; never approve it yourself.
+- **An unsigned session is told how to sign, once.** The first strain check of a session
+  that has not signed prints the filled-in sign command.
+
+Selftest 191 → 198: 7 new checks (6 fail on 0.8.1; one guards that a signed session is not
+nagged).
+
+
 ## 0.8.1 — 2026-09-30
 
 **What the user reads is one plain sentence; the details are the agent's.** Found the same

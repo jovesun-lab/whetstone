@@ -30,20 +30,125 @@ session id. Two agents working the same project in two windows are two sessions 
 counts never add up. If you cannot tell which session a number belongs to, it is not a
 measurement.
 
-## When to run the check
+Every place below that asks you to DO something is a numbered procedure. Follow the steps
+in order and do not skip one because it seems implied. Every command you need is printed,
+filled in, in the latest strain tick — copy it from there (it carries this session's key,
+the state folder and the plugin's path).
 
-Run it when any of these happen — not on a feeling that it might be time:
+## At the start of a session
 
-1. **A strain tick fires.** On hosts with hooks, a tick arrives every N tool calls
-   (default 10) and says so explicitly. Run the check before continuing the work.
-2. **A hard signal lands** (see the table below) — a factual error caught, a regression
-   introduced, a revert of your own work, a context compaction.
-3. **The task list changes shape** — a new side task, a goal switch, a task that balloons
-   past the one it was supposed to serve.
-4. **The user asks** how the session is doing, or whether to wrap.
+1. **Sign.** Run `strain-sign.sh --agent <your name>` (add `--ledger ./Log.strain` if the
+   project keeps one). The first strain tick also prints this command, filled in, if you
+   have not signed yet.
+2. **Tell the user the one sentence it prints** — for example "Strain is on. This
+   conversation is 12% full — strain will tell you when it's time to wrap up and start
+   fresh." Copy it as it is. The longer "Strain receipt" line goes to stderr for you; do
+   not paste it at the user.
+3. **If step 1 was refused**, go to *When a record command is refused* below, then come
+   back and sign.
+4. **If there is a ledger,** the sign also prints one line about the previous session of
+   the same agent. Tell the user that line too.
 
-On a host with no hooks, 2–4 still work. That is the cooperative half, and it is weaker:
-say so rather than implying the check is firing on its own when it is not.
+## When the tick fires
+
+A tick arrives every N tool calls (default 10) on hosts with hooks. It says
+"🩺 STRAIN TICK" and proposes a tier.
+
+1. **Read the proposed tier and the reason** in the tick.
+2. **Check what the counters cannot see:** did an error of yours reach the user since the
+   last tick? Did a side task grow past the main one?
+3. **If an error reached the user** (or shipped work), record it first:
+   `strain-signal.sh <short-name> --escaped`. If you caught and fixed it before anyone
+   saw it, record it with `--caught` — that does not move the tier.
+4. **Record the tier:** `strain-level.sh <Healthy|Mid|High|Warning|Danger|UNMEASURED>`.
+   Record the proposal unless step 2 or 3 gives a reason to change it. A lower proposal
+   than last time is allowed — strain goes down when the load does.
+5. **If the proposal is UNMEASURED,** follow *When strain cannot measure* below.
+6. **Tell the user** in the shape for that tier (*How to report it*).
+
+## When strain cannot measure (UNMEASURED)
+
+UNMEASURED is never Healthy. The tick names the kind; follow the steps for that kind.
+
+**`no source`** — strain found no log it can read.
+1. Look where hosts keep usage: a session or usage log, a status or usage command, a usage
+   API, the host's settings or status pane.
+2. If you find a number, record it: `strain-level.sh <tier> --ctx-used <tokens>
+   --ctx-source "<where you read it>" --ctx-provenance host-reported` (or
+   `agent-estimated` if you worked it out yourself).
+3. If you find nothing, record that: `strain-level.sh UNMEASURED --no-source --checked
+   "<the places you looked>"`.
+4. The tick repeats the checklist until step 2 or step 3 is done.
+
+**`unusable`** — a source was read but gave no usable number.
+1. If the fill is past 100%: tell the user that strain's own arithmetic is off (not their
+   session), and quote the used count as a lower bound.
+2. Offer a bug report: run `strain-report.sh --note "<what you saw, no paths>"`, tell the
+   user where the draft is, and say nothing was sent. They decide whether to send it.
+3. If your host shows its own usage number, feed it (step 2 of `no source`).
+4. If the number lives in a durable log strain cannot read, draft an adapter proposal the
+   same way (`strain-report.sh --note "<where the log is, which fields, one redacted
+   sample line>"`). Do not edit the installed plugin.
+
+**`stale`** — a compaction or a model switch came after the last reading.
+1. If the host measures itself (Claude Code, Codex): do nothing; the next request brings
+   a fresh reading.
+2. If the last reading was fed by you: feed a new one.
+
+With nothing to feed at all, record exactly that: `strain-level.sh UNMEASURED`.
+
+## When a record command is refused
+
+Read the first line of the error, then follow the matching steps.
+
+**"no session key"**
+1. Copy the record command from the LATEST strain tick (it carries
+   `STRAIN_SESSION=<this session>`) and run that.
+2. If there is no tick yet, pick your session from the list the error prints — the one
+   your host names, or the one in your folder — and run the ready command under it.
+3. Never copy a key from an older session.
+
+**"the session sources disagree"**
+1. Use the key your host names (the error lists it).
+2. Run the command again with that key.
+
+**"could not write state" — a permission problem** (sandboxed hosts, Codex for one)
+1. Raise your host's own permission prompt to ask the user (if your host has no prompt,
+   ask in chat): allow writing to strain's folder (the error names it) — say it is only
+   strain's folder.
+2. Wait for the user's answer.
+3. If they allow it: run the same command again with that permission.
+4. Check it worked: `strain-sign.sh --receipt` says "this shell can write".
+5. If they refuse: say plainly that strain cannot record for this session; the hooks keep
+   counting on their own.
+
+Not allowed: approving the permission yourself, widening it beyond strain's folder, and
+moving the folder for your shell alone.
+Set `STRAIN_STATE_DIR` only if the host's hooks get it too — set in your shell alone,
+your records and the hooks' counts end up in two different folders.
+
+## At the wrap
+
+1. Write your handoff (strain does not; see *Throughline* below).
+2. Stamp the wrap: `strain-wrap.sh --label "<what was handed off>"` (add `--with-debt` if
+   you leave known loose ends).
+3. If you keep working after the stamp, run it again at the next handoff — the tick says
+   "N calls since the wrap" until you do.
+
+A stamp means **this session wrapped / handed off** — not "the work is right" (that is
+your project's own check). It resets nothing: a new session starts at zero anyway.
+
+## Before saying strain is missing
+
+Look before saying strain is missing. Do these before you tell anyone strain is not
+installed or not running:
+1. Check for strain's state folder (`~/.local/state/strain`, or `STRAIN_STATE_DIR`) and a
+   file for this session under `sessions/`.
+2. Run `strain-sign.sh --receipt`. If it prints a receipt, strain is here.
+3. Check your host's own plugin listing — the one YOUR host has (for example
+   `claude plugin list` on Claude Code, or Codex's plugin folder). A command from another
+   host proves nothing.
+4. Remember a tick fires only every N tool calls; no tick yet is not proof.
 
 ## What to count
 
@@ -61,8 +166,7 @@ reads both). Where that exists, the context reading is a real number, not an imp
   happened. System prompt, tool schemas, project instructions, skills. It is the floor the
   session can never get back under, and it is usually larger than people expect.
 
-The tick directive quotes both when it can. When it cannot, it says so — and then you
-count behaviour instead. **Never quote a context number you did not measure.**
+**Never quote a context number you did not measure.**
 
 ### Behavioural signals — always available
 
@@ -79,28 +183,14 @@ count behaviour instead. **Never quote a context number you did not measure.**
 | **A revert of your own work** | **hard** | escaped if the user saw the churn |
 | **A context compaction** | **stated, never a tier input** | the tick says "compaction #N"; re-read your goal and handoff |
 
-Soft signals are colour, not ladder. Hard signals are ABSOLUTE — the same on any window
-size — but only the ones that **escaped** move the tier. A caught-and-fixed error is a
-working immune system, not exhaustion: say so, record it, and let a repeat of the same
-class earn a *pattern note* instead of a tier. Record every hard signal when it happens,
-so the counters know what you know:
-
-```
-bash <strain>/scripts/strain-signal.sh <kind> --caught|--escaped
-```
-
-**Copy the full command from the tick line** — it carries this session's key, the state
-folder and the plugin's absolute path. `$CLAUDE_PLUGIN_ROOT` exists only inside the hook
-process, never in your shell, so a command built on it fails (fixed in 0.7.0).
-
-A compaction cuts the context. Every tick after it says so ("compaction #N"), and a
-one-time recovery directive asks you to re-read your goal and handoff — but it never
-raises the tier: the fill after it is what measures the load (0.7.0).
+Soft signals are colour, not ladder. Hard signals are the same on any window size, but
+only the ones that **escaped** move the tier. A repeat of the same class earns a *pattern
+note* — say it to the user.
 
 ## The tiers
 
 Two lines are scored separately and the higher one wins. The tick computes and PROPOSES
-the tier; your job is to confirm it or adjust it with what the counters cannot see.
+the tier; you confirm it or change it with what the counters cannot see.
 
 - **Line A — capacity:** fill against caps **50 / 60 / 70 / 74%** → Mid / High / Warning /
   Danger (Danger is derived = throttle onset 80 − wrap budget 6, so a mandated wrap can
@@ -108,24 +198,8 @@ the tier; your job is to confirm it or adjust it with what the counters cannot s
 - **Line B — conduct:** escaped signals — 0–2 move nothing · 3 → Mid · 4 → High · 5+ →
   Warning. A burst usually shares one root cause (a capability gap), not exhaustion.
 - **Combination:** fill already at Warning/Danger **and** 3+ escaped → Danger.
-- **UNMEASURED** (0.7.0): Line A abstains and Line B says nothing → the proposal is
-  `UNMEASURED`, never Healthy. Since 0.8.0 it names its kind, and each kind has a next
-  step that ends in a record — follow it, do not stop at reporting UNMEASURED:
-  - `no source` — no log strain can read. Look where hosts keep usage (a session or usage
-    log, a status or usage command, a usage API, the host's settings or status pane), then
-    record ONE of: a feed (`strain-level.sh <tier> --ctx-used <n> --ctx-source "<where>"
-    --ctx-provenance host-reported|agent-estimated`) or
-    `strain-level.sh UNMEASURED --no-source --checked "<the places you looked>"`. "My
-    reader can't read it" is not "the host has no number" — look first.
-  - `unusable` — a source was read but gave no usable number. Read the host's own number
-    and feed it with its provenance. A fill past 100% means strain's arithmetic is off:
-    tell the user, quote the used count as a lower bound, and offer a bug report they send
-    by hand (`strain-report.sh --note "<what you saw, no paths>"`). If the number lives in
-    a durable log, draft an adapter proposal the same way — never patch the installed
-    plugin.
-  - `stale` — a compaction or a model switch came after the last reading. A host that
-    measures itself re-measures at the next request; a fed number needs a new feed.
-  With nothing to feed, record exactly that: `strain-level.sh UNMEASURED`.
+- **UNMEASURED:** Line A abstains and Line B says nothing. Never Healthy; see *When strain
+  cannot measure*.
 
 | Tier | Fill cap | Also reached by | What it means |
 |---|---|---|---|
@@ -135,22 +209,15 @@ the tier; your job is to confirm it or adjust it with what the counters cannot s
 | **Warning** | 70–74% | 5+ escaped signals | wrap now; new work should start fresh |
 | **Danger** | 74%+ | Warning-level fill **plus** 3+ escaped | stop and hand off |
 
-The caps are printed in every readout (the boot line and every tick show the same ones)
-and are configurable; retune them to your setup.
-
-**Escalate only on evidence, never on momentum.** Ticks accumulating is not evidence; a
-previous high reading is not evidence. Fill crossing a band and fresh escaped signals
-are the only ladders — and strain DECAYS: when the proposal comes in lower than the
-carried tier and nothing new happened, record the lower tier. Floors from escaped
-signals hold; everything else is allowed to relax. (The old
-"continuing past a Warning ⇒ Danger" rule is deleted — it pinned Danger at a measured
-33% fill, three sessions running.)
+**Raise the tier only on evidence, never on momentum.** Ticks piling up is not evidence; a
+previous high reading is not evidence. Fill crossing a cap and fresh escaped signals are
+the only ladders.
 
 ## How to report it
 
-Match the shape to the tier. The point is that the user can act without asking follow-ups.
+Match the shape to the tier, so the user can act without asking follow-ups.
 
-- **Healthy** — one line, or nothing at all if the user did not ask. Do not pad.
+- **Healthy** — one line, or nothing at all if the user did not ask.
 - **Mid / High** — the counts, and a suggestion to wrap soon:
   > 🟡 High — context 136k/200k (68%), of which 70k was the boot. 1 main goal, 3 side
   > tasks. Suggest finishing the current thread and wrapping.
@@ -160,99 +227,34 @@ Match the shape to the tier. The point is that the user can act without asking f
   > shipped broken and the window is nearly full. Recommend wrapping and starting
   > fresh; I will write the handoff first.
 
-Then **record it**, so the next tick carries it forward instead of starting over:
+## Signing from a shell that cannot reach strain's folder
 
-```
-bash <strain>/scripts/strain-level.sh <Healthy|Mid|High|Warning|Danger|UNMEASURED>
-```
-
-(Again: copy the filled command from the tick line. A record command needs this
-session's key — the printed one carries it; without a key strain refuses and lists the
-candidate sessions rather than guessing which one you meant.)
-
-An unrecorded tier is how this reading silently sits at its first value forever while
-every check around it runs correctly.
-
-## Wrapping
-
-When the tier says wrap, wrap — and stamp it at the handoff:
-
-```
-bash <strain>/scripts/strain-wrap.sh --label "what was handed off"
-```
-
-A stamp means **this session wrapped / handed off** — not "the work is right" (that is
-your project's own check). It resets nothing (0.7.0): a new session starts at zero
-anyway, and resetting a session that keeps working in the same full context would hide
-real load. If you keep working after the stamp, the tick says so ("N calls since the
-wrap") — re-run it at the next handoff.
-
-**Sign early** (once you know who you are), especially when another agent or a later
-session will work the same project:
-
-```
-bash <strain>/scripts/strain-sign.sh --agent <your-name> [--ledger ./Log.strain]
-```
-
-The FIRST sign of a session prints one plain sentence for the user — whether strain is
-on and how full this conversation is. **Relay that sentence to the user as it is** (on
-Claude Code the hook also shows it to them itself). The details — host, reading source,
-where the window came from, whether the hooks are saving, whether your shell can write —
-go to stderr for you; use them to troubleshoot, do not paste them at the user.
-`strain-sign.sh --receipt` repeats both.
-
-With a ledger (an append-only account book: boot-sign and wrap rows), the FIRST sign of a
-session also reports the previous session of the same agent — its tool calls,
-compactions, errors escaped and caught, whether it wrapped and whether it kept working
-after — so a handoff arrives with its numbers. It only reads; nothing is carried over.
-
-**If the sign itself fails because your shell cannot reach the state home** (a
-sandboxed or remote session), do not silently stay unsigned — deliver the sign by
-hand: give the user ONE copy-paste line for a plain terminal on the host, with
-everything filled in (the session id as `STRAIN_SESSION=…`, your `--agent` name, the
-ledger path if the project has one — see "Signing from a bare terminal" in the
-README). Put the command alone in its own code block, the steps outside it. The
-`Owner: … — signed` line the user pastes back is your receipt; until it arrives,
-report yourself as measured-but-unsigned, never as signed.
+(A sandboxed or remote session, after the user refused or the host has no permission
+prompt.)
+1. Give the user ONE copy-paste line for a plain terminal on their machine, everything
+   filled in: `STRAIN_SESSION=<this session> bash <plugin>/scripts/strain-sign.sh --agent
+   <your name>` (plus `--ledger <path>` if the project keeps one). See "Signing from a bare
+   terminal" in the README.
+2. Put the command alone in its own code block; the steps go outside it.
+3. Until the user pastes back the `Owner: … — signed` line, report yourself as
+   measured-but-unsigned, never as signed.
 
 Strain says *when* to hand off. It does not do the handing off. Its companion for that is
 **[Throughline](../../../handoff-skill/throughline)**, whose task track is also the
-cleanest source for the behavioural counts above: one main goal anchor, every other task
-tagged. If you use both, strain reads what throughline already records.
-
-## Which session, and is strain even here?
-
-- **A record needs this session's key.** The tick prints it into every command
-  (`STRAIN_SESSION=…`); some hosts also hand it to your shell (Claude Code through its
-  environment hand-over, Codex as `CODEX_THREAD_ID`). Without a key a record is refused —
-  pick your session from the list it prints; never copy a key from an older session.
-- **Look before saying strain is missing.** Before you tell anyone strain is not
-  installed or not running, check: is there a state folder (`~/.local/state/strain`, or
-  `STRAIN_STATE_DIR`) with a file for this session under `sessions/`? Does
-  `strain-sign.sh --receipt` print a receipt? Your host's own plugin listing is a third
-  check (for example `claude plugin list` on Claude Code, or Codex's plugin folder) — but
-  use what your host actually has; a command from another host proves nothing. A tick
-  that has not arrived yet is not proof either: ticks fire every N tool calls.
+cleanest source for the behavioural counts above.
 
 ## Honest limits
 
-- **Hooks are per-host.** Where they exist, the check fires whether or not the agent
-  remembers. Where they do not, it is a discipline the agent has to keep — weaker, and
-  worth naming out loud rather than papering over. On a hook-less host, adopt the
-  manual cadence yourself: run the check every ~10 tool calls or at each milestone.
-- **Context auto-parsing knows two hosts' logs** (Claude Code's and Codex's). On other
-  hosts strain runs in counted mode even when the host shows its numbers on screen —
-  in that case YOU are the adapter: record the window once, for your product and model
-  (`strain-calibrate.sh --product <p> --model <m> --window <n> --basis nominal|runtime
-  --source "<where>"`), and feed the usage at recording time (`strain-level.sh <tier>
-  --ctx-used <n> --ctx-source "<where>"`). A fed reading is labelled agent-fed with its
-  source — never report it as something strain measured itself.
-- **Record commands write outside the project** (`~/.local/state/strain`). A sandboxed
-  host may refuse them: ask the user to allow writing to that folder, do not escalate on
-  your own. The hooks are not affected — they keep saving. Set `STRAIN_STATE_DIR` to
-  another folder only if the host's hooks get it too; set in your shell alone, your
-  records and the hooks' counts end up in two different folders.
-- **Thresholds are guesses** until you retune them. They came from one agent-and-user pair
-  over a long run; yours will differ.
-- **The soft signals are judgement calls.** Counting them honestly is the whole job; a
-  tier that is always Healthy is not a healthy session, it is a broken check.
+- **Hooks are per-host.** Where they exist, the check fires whether or not you remember.
+  Where they do not: run the check yourself every ~10 tool calls or at each milestone,
+  and say that it is manual.
+- **Context auto-reading knows two hosts' logs** (Claude Code's and Codex's). On other
+  hosts, feed the number yourself (*When strain cannot measure*), and record the window
+  once for your product and model: `strain-calibrate.sh --product <p> --model <m>
+  --window <n> --basis nominal|runtime --source "<where>"`. A fed reading is labelled
+  agent-fed — never report it as something strain measured itself.
+- **Record commands write outside the project** (`~/.local/state/strain`). A sandboxed host
+  may refuse them — see *When a record command is refused*. The hooks are not affected.
+- **Thresholds are guesses** until you retune them.
+- **The soft signals are judgement calls.** A tier that is always Healthy is not a healthy
+  session, it is a broken check.

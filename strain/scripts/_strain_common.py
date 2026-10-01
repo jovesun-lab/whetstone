@@ -850,13 +850,20 @@ def details_line(st, path, ledger_state):
 
 
 def write_hint(path):
-    """Appended to a record command's write failure: on a sandboxed host the agent's shell
-    may not write where the hooks do. Never move the folder for the shell alone -- the
-    hooks would keep writing to the old one and never read the records."""
+    """Appended to a record command's write failure. 0.8.2: numbered steps, not a
+    principle -- 'do not escalate on your own' was read by one agent as 'never ask for
+    permission', and it sat unsigned until the user asked."""
     if can_write(path):
         return ""
-    return (" -- if your host runs your commands in a sandbox, ask the user to allow writing"
-            " to this folder; strain's own hooks are not affected, they keep saving")
+    d = os.path.dirname(os.path.dirname(os.path.abspath(path)))
+    return ("\nThis shell may not write to strain's folder (%s). Do this:\n"
+            "  1) Raise your host's own permission prompt to ask the user (or ask in chat if"
+            " it has none): allow writing to %s -- it is only strain's folder.\n"
+            "  2) Once they allow it, run the same command again with that permission.\n"
+            "  3) Check it worked: strain-sign.sh --receipt says \"this shell can write\".\n"
+            "Not allowed: do not approve it yourself, do not widen it beyond that folder, and do"
+            " not move the folder for your shell alone (STRAIN_STATE_DIR) -- the hooks keep"
+            " saving to this one, and they are not affected." % (d, d))
 
 
 def _short_when(ts):
