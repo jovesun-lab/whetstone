@@ -34,8 +34,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (state_dir, session_path, load, save, blank,
                             now_iso, touch_index, read_payload, log_model, state_lock,
                             settle_window, why_unsaved, user_messages_on,
-                            SAVE_FAILED_LINE)
-from _strain_tick import caps_calibration_line
+                            SAVE_FAILED_LINE, DESCRIBE_STEP, default_agent_name,
+                            instruction_files, block_state, load_prefs,
+                            PRODUCT_OF_SUBSTRATE)
+from _strain_tick import caps_calibration_line, act_command
 import _strain_context as ctxmod
 
 PRUNE_DAYS = 30
@@ -66,6 +68,41 @@ def hand_over(sid):
             f.write("export STRAIN_SESSION=%s\n" % shlex.quote(sid))
     except Exception:
         pass
+
+
+def start_steps(st, sdir):
+    """0.8.3 C2: an unsigned session's start line carries the start steps, numbered, with
+    the command filled in. Before 0.8.3 the start line carried calibration only, and the
+    sign step first appeared at the 10th tool call -- a short session never signed, and a
+    Codex session never signed at all (its skill description said 'not for short
+    one-pass tasks', so it never loaded the skill)."""
+    sign = act_command("strain-sign.sh", st, sdir, "").rstrip()
+    steps = [
+        "STRAIN START -- this session is not signed in yet. STEPS, before your first reply:",
+        "1) Run `%s` -- it signs this session in as '%s'; add --agent '<name>' only if the user"
+        " gave you a name. When you run it, %s." % (sign, default_agent_name(st), DESCRIBE_STEP),
+        "2) If your host asks the user to approve it, keep the prompt open until they answer"
+        " -- do not end your turn. If your host has no prompt, ask in chat, then end your turn"
+        " and wait for the reply.",
+        "3) Allowed: tell the user the one sentence it prints. Refused: do not sign; tell the"
+        " user strain will only count this session, and carry on with the work.",
+    ]
+    # C6: offer the instruction file once -- global first -- unless the block is already in
+    # one, or the user declined it on this host.
+    substrate = str(st.get("substrate") or "")
+    gfile, pfiles = instruction_files(substrate, str(st.get("cwd") or ""))
+    host = PRODUCT_OF_SUBSTRATE.get(substrate, "")
+    declined = (load_prefs(sdir).get(host) or {}).get("instructions") == "declined"
+    if gfile and not declined and all(block_state(p) == "absent" for p in [gfile] + pfiles):
+        steps.append(
+            "4) Ask the user once whether to add strain's start step to their instruction"
+            " file, so every new session signs in by itself: the global file first (%s --"
+            " every project, this computer only), or this project's own file. Show them the"
+            " block `%s` prints, and add it only if they agree. If they say no, record that so"
+            " it is never asked again: `%s`."
+            % (gfile, act_command("strain-sign.sh", st, sdir, "--instructions"),
+               act_command("strain-sign.sh", st, sdir, "--decline-instructions")))
+    return " ".join(steps)
 
 
 def main():
@@ -137,6 +174,8 @@ def main():
         bits.append("%d tool calls counted so far in this session." % int(st["tick"]))
     if note:
         bits.append(note)
+    if not st.get("agent"):
+        bits.append(start_steps(st, sdir))
     if bits:
         out = {"hookSpecificOutput": {
             "hookEventName": "SessionStart",

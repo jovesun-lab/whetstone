@@ -601,6 +601,8 @@ def section_080(tmp):
     lvl(gdir, ["--session", sg2, "--ctx-used", "1000", "--ctx-source", "x"])
     run("_strain_wrap.py", None, ["--session", sg1], {"STRAIN_STATE_DIR": gdir})
     run("_strain_report.py", None, ["--session", sg1], {"STRAIN_STATE_DIR": gdir})
+    run("_strain_sign.py", None, ["--decline-instructions", "--session", sg1],
+        {"STRAIN_STATE_DIR": gdir})                                   # 0.8.3: prefs.json
     bad = []
     for root, _dirs, files in os.walk(gdir):
         for fn in files:
@@ -613,7 +615,12 @@ def section_080(tmp):
                 continue
             if _re.match(r"^reports/strain-report-[0-9a-f]{8}-\d{8}-\d{6}\.md$", rel):
                 continue
-            if rel in ("ledgers.json.lock", "models.json.lock"):
+            if rel in ("ledgers.json.lock", "models.json.lock", "prefs.json.lock"):
+                continue
+            if rel == "prefs.json":
+                if not all(k in ("Claude Code", "Cowork", "Codex") and isinstance(v, dict)
+                           for k, v in json.load(open(full)).items()):
+                    bad.append(rel + " (an entry not keyed by its host)")
                 continue
             if rel == "index.json":
                 ix = json.load(open(full))
@@ -734,6 +741,185 @@ def section_082(tmp):
           all(h in skill for h in ("## At the start of a session", "## When a record command is refused",
                                    "## When the tick fires", "## At the wrap"))
           and "permission prompt" in skill, "")
+
+
+def section_083(tmp):
+    """0.8.3: every session signs in at the start, asks properly, and never nags. Found
+    live on Codex (2026-09-30): a new session never signed, because the skill's description
+    said "not for short one-pass tasks" and nothing at the start said otherwise; a
+    permission prompt closed when the agent ended its turn; two sessions signed under two
+    names, so the second could not find the first."""
+    import re as _re
+    ROOT = os.path.dirname(HERE)
+    LANG = "in the user's language"
+
+    def dec(out):
+        try:
+            return json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        except Exception:
+            return out
+
+    def boot(sdir, sid, cwd="/tmp/proj", host="claude-code", source="startup", env=None):
+        payload = {"session_id": sid, "cwd": cwd, "source": source,
+                   "hook_event_name": "SessionStart"}
+        e = {"STRAIN_STATE_DIR": sdir, "STRAIN_SUBSTRATE": host}
+        e.update(env or {})
+        return dec(run("_strain_reset.py", payload, [], e)[0])
+
+    def sign(sdir, args, env=None):
+        e = {"STRAIN_STATE_DIR": sdir}
+        e.update(env or {})
+        return run("_strain_sign.py", None, list(args), e)
+
+    def front(path):
+        try:
+            txt = open(path).read()
+        except Exception:
+            return "", ""
+        m = _re.match(r"^---\n(.*?)\n---\n(.*)$", txt, _re.S)
+        return (m.group(1), m.group(2)) if m else ("", txt)
+
+    def flat(s):
+        """A phrase check must not depend on where a markdown line happens to wrap."""
+        return " ".join(s.split())
+
+    # ---- C1 · a skill whose name and description are about the session start ------------
+    fm, body = front(os.path.join(ROOT, "skills", "start", "SKILL.md"))
+    fm = flat(fm)
+    check("0.8.3 C1: a strain:start skill exists, triggered at the START of every session",
+          "name: start" in fm and "START of every session" in fm and "short sessions too" in fm, fm)
+    sfm, sbody = front(os.path.join(ROOT, "skills", "strain", "SKILL.md"))
+    sfm = flat(sfm)
+    check("0.8.3 C1: the strain skill no longer tells agents to skip short sessions",
+          bool(sfm) and "Not for short" not in sfm and "strain:start" in sfm, sfm)
+
+    # ---- C2 · the start line carries the start steps while unsigned ---------------------
+    d = os.path.join(tmp, "c083")
+    s1 = U(300)
+    b1 = boot(d, s1)
+    check("0.8.3 C2: an unsigned session's start line carries numbered start steps with the"
+          " filled sign command",
+          "not signed" in b1 and "1)" in b1 and "2)" in b1 and "3)" in b1
+          and ("STRAIN_SESSION=%s" % s1) in b1 and "strain-sign.sh" in b1, b1)
+    check("0.8.3 C2: the start steps say to keep the host's prompt open, and what a refusal means",
+          "do not end your turn" in b1 and "Refused" in b1, b1)
+    sign(d, ["--agent", "ana", "--session", s1])
+    b1r = boot(d, s1, source="resume")
+    check("0.8.3 C2 (guard): a signed session's start line carries no start steps",
+          "not signed" not in b1r and "strain-sign.sh" not in b1r, b1r)
+
+    # ---- C3 · the receipt says whether the session is signed ----------------------------
+    s3 = U(301)
+    boot(d, s3)
+    _, e1, _ = sign(d, ["--receipt", "--session", s3])
+    sign(d, ["--agent", "ana", "--session", s3])
+    _, e2, _ = sign(d, ["--receipt", "--session", s3])
+    check("0.8.3 C3: the receipt says 'not signed', then 'signed as <name>'",
+          "not signed" in e1 and "signed as ana" in e2 and "not signed" not in e2, (e1, e2))
+
+    # ---- C4 · a stable default name -----------------------------------------------------
+    s4 = U(302)
+    boot(d, s4, cwd="/tmp/work/my-app")
+    o4, e4, r4 = sign(d, ["--session", s4])
+    check("0.8.3 C4: a sign with no --agent signs as '<host> · <project folder>'",
+          r4 == 0 and "Owner: Claude Code · my-app — signed" in o4
+          and state_of(d, s4).get("agent") == "Claude Code · my-app", (r4, o4, e4))
+    s5 = U(303)
+    boot(d, s5, cwd="/private/var/empty", host="cowork")
+    o5, _, r5 = sign(d, ["--session", s5])
+    check("0.8.3 C4: where the folder names nothing (local Cowork), the host name alone",
+          r5 == 0 and state_of(d, s5).get("agent") == "Cowork", (r5, o5))
+    s6 = U(304)
+    boot(d, s6, cwd="/tmp/work/my-app")
+    sign(d, ["--agent", "Jo", "--session", s6])
+    check("0.8.3 C4 (guard): a name the user gave wins", state_of(d, s6).get("agent") == "Jo",
+          state_of(d, s6))
+
+    # ---- C5 · after a refusal, no nagging -----------------------------------------------
+    s7 = U(305)
+    t7 = dec(tick(d, s7, n=1)[0])
+    check("0.8.3 C5: the tick's steps say what to do after a refusal -- no records, the tier in"
+          " chat", "refused" in t7 and "only report the tier in chat" in t7, t7[-900:])
+    check("0.8.3 C4: the printed sign command runs as is (no name to fill in)",
+          "<your name>" not in b1 and "<your name>" not in t7 and "strain-sign.sh" in t7,
+          t7[-600:])
+
+    # ---- C6 · offer the instruction file, global first; a decline is final --------------
+    home = os.path.join(tmp, "home083")
+    proj = os.path.join(tmp, "proj083")
+    os.makedirs(home, exist_ok=True)
+    os.makedirs(proj, exist_ok=True)
+    HENV = {"HOME": home}
+    gfile = os.path.join(home, ".claude", "CLAUDE.md")
+    s8 = U(306)
+    boot(d, s8, cwd=proj, env=HENV)
+    o8, e8, r8 = sign(d, ["--instructions", "--session", s8], HENV)
+    check("0.8.3 C6: --instructions prints the block with its version marker and says the"
+          " global file lacks it",
+          r8 == 0 and "<!-- strain:start-steps" in o8 and "<!-- /strain:start-steps -->" in o8
+          and gfile in e8 and "absent" in e8, (r8, o8, e8))
+    os.makedirs(os.path.dirname(gfile), exist_ok=True)
+    with open(gfile, "w") as f:
+        f.write("# mine\n\n" + o8)
+    _, e9, _ = sign(d, ["--instructions", "--session", s8], HENV)
+    check("0.8.3 C6: ... and finds it once it is there", "present" in e9, e9)
+    b9 = boot(d, U(307), cwd=proj, env=HENV)
+    os.remove(gfile)
+    s10 = U(308)
+    b10 = boot(d, s10, cwd=proj, env=HENV)
+    check("0.8.3 C6: the start line offers the instruction file, global first, only while the"
+          " block is absent", "instruction file" in b10 and gfile in b10
+          and "instruction file" not in b9, (b9[-400:], b10[-700:]))
+    pfile = os.path.join(proj, "CLAUDE.md")
+    with open(pfile, "w") as f:
+        f.write(o8)
+    b10p = boot(d, U(311), cwd=proj, env=HENV)
+    os.remove(pfile)
+    check("0.8.3 C6: a block in the project's own file counts too",
+          "instruction file" not in b10p, b10p[-400:])
+    sign(d, ["--decline-instructions", "--session", s10], HENV)
+    b11 = boot(d, U(309), cwd=proj, env=HENV)
+    prefs = jl(os.path.join(d, "prefs.json"), {})
+    check("0.8.3 C6: a decline is stored per host and the offer never comes back",
+          "instruction file" not in b11
+          and (prefs.get("Claude Code") or {}).get("instructions") == "declined", (b11[-400:], prefs))
+    cxh = os.path.join(tmp, "codex-home083")
+    CENV = {"HOME": home, "CODEX_HOME": cxh}
+    s12 = U(310)
+    boot(d, s12, cwd=proj, host="codex", env=CENV)
+    _, e12, _ = sign(d, ["--instructions", "--session", s12], CENV)
+    check("0.8.3 C6: on Codex the global file is AGENTS.md in its home",
+          os.path.join(cxh, "AGENTS.md") in e12, e12)
+
+    # ---- C7 / C8 · the docs carry the flow and its limits -------------------------------
+    readme = flat(open(os.path.join(ROOT, "README.md")).read())
+    check("0.8.3 C7: strain:start has numbered steps for the start AND the wrap, prompt kept open",
+          "## At the start" in body and "## At the wrap" in body and "\n1. " in body
+          and "keep the prompt open" in flat(body) and "do not end your turn" in flat(body),
+          body[:300])
+    check("0.8.3 C8: README states the start flow and the limits the host controls",
+          "## Starting and wrapping a session" in readme and "keep the prompt open" in readme
+          and "the host decides when its prompt closes" in readme and "never wraps" in readme, "")
+
+    # ---- C9 · the approval box shows the agent's sentence: make it the user's ------------
+    pdir = os.path.join(tmp, "p083")
+    sp = U(312)
+    tick(pdir, sp, n=1000)
+    os.chmod(os.path.join(pdir, "sessions", sp + ".json"), 0o444)
+    os.chmod(os.path.join(pdir, "sessions"), 0o555)
+    try:
+        _, herr, _ = run("_strain_level.py", None, ["Mid", "--session", sp], {"STRAIN_STATE_DIR": pdir})
+    finally:
+        os.chmod(os.path.join(pdir, "sessions"), 0o755)
+        os.chmod(os.path.join(pdir, "sessions", sp + ".json"), 0o644)
+    t_signed = dec(tick(d, s1, n=1)[0])
+    check("0.8.3 C9: every place that has the agent run a strain command says to describe it"
+          " in the user's language",
+          all(LANG in flat(x) for x in (b1, t7, t_signed, herr, body, sbody)),
+          [i for i, x in enumerate((b1, t7, t_signed, herr, body, sbody)) if LANG not in flat(x)])
+    check("0.8.3 B2: prefs.json is keyed per host",
+          bool(prefs) and all(k in ("Claude Code", "Cowork", "Codex") and isinstance(v, dict)
+                              for k, v in prefs.items()), prefs)
 
 
 def main():
@@ -1501,6 +1687,7 @@ def main():
 
         section_080(tmp)
         section_082(tmp)
+        section_083(tmp)
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

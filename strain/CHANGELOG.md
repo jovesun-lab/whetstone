@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.8.3 — 2026-10-01
+
+**Every session signs in at the start, asks you properly, and stops asking once you say
+no.** Found on Codex the night 0.8.2 shipped: a new session never signed in, a permission
+prompt closed before it was answered, and two sessions of the same agent signed under two
+names.
+
+- **The start line carries the steps.** Until now the line strain gives the agent at the
+  start of a session held calibration only; the sign step first appeared at the 10th tool
+  call, so a short session might never sign. While a session is unsigned, the start line
+  now lists numbered steps with the sign command filled in.
+- **A skill named for the moment: `strain:start`.** One agent read the strain skill's
+  description ("not for short one-pass tasks") and decided not to load it at the start.
+  That sentence is gone, and a second skill in the same plugin, `strain:start`, holds the
+  start and wrap steps.
+- **One name per agent, every session.** `strain-sign.sh` with no `--agent` signs as
+  `<host> · <project folder>` (for example `Claude Code · my-app`), so the next session of
+  the same agent finds this one. A name you give your agent wins. The printed command now
+  runs as is — no name to fill in.
+- **You are asked properly.** Your host's approval prompt shows the agent's own one-line
+  description of the command, so every step that runs a strain command now says: describe
+  it in the user's language, in plain words. The agent keeps the prompt open until you
+  answer instead of ending its turn. If you say no, it does not sign and does not ask again
+  before the wrap — every tick now says so.
+- **Once: the instruction file.** At the start the agent offers to add a short block to
+  your instruction file so every new session signs in by itself — the global file first
+  (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`), or the project's own. `strain-sign.sh
+  --instructions` prints the block (with a version marker) and says whether it is already
+  there; `--decline-instructions` records a no, and strain never asks again on that host.
+- **The receipt says whether the session is signed** ("signed as …" or "not signed").
+- **At the wrap** the agent checks permission again, signs if needed, then stamps.
+
+Selftest 198 → 219: 21 new checks (18 fail on 0.8.2; 3 guard what must not change).
+
+
 ## 0.8.2 — 2026-09-30
 
 **A pasted screenshot no longer breaks the reading, and every instruction to the agent is a

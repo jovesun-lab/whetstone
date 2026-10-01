@@ -836,6 +836,8 @@ def details_line(st, path, ledger_state):
     src, mode = reading_line(ctx)
     when = _short_when(str(ctx.get("observedAt") or st.get("updated") or ""))
     parts = ["host %s" % host, "session %s" % str(st.get("sid") or "?")[:8]]
+    # 0.8.3 C3: the start steps begin with "is this session signed?" -- answer it here.
+    parts.append(("signed as %s" % st["agent"]) if st.get("agent") else "not signed")
     parts.append("reading %s%s" % (src, (" at " + when) if (when and src != "none") else ""))
     kind = str(ctx.get("kind") or "")
     parts.append(mode + ((" · " + kind) if kind and mode not in ("measured",) else ""))
@@ -852,18 +854,132 @@ def details_line(st, path, ledger_state):
 def write_hint(path):
     """Appended to a record command's write failure. 0.8.2: numbered steps, not a
     principle -- 'do not escalate on your own' was read by one agent as 'never ask for
-    permission', and it sat unsigned until the user asked."""
+    permission', and it sat unsigned until the user asked. 0.8.3: the prompt stays open
+    (one agent ended its turn and the host closed the prompt unanswered), and the
+    sentence in it is written for the user."""
     if can_write(path):
         return ""
     d = os.path.dirname(os.path.dirname(os.path.abspath(path)))
     return ("\nThis shell may not write to strain's folder (%s). Do this:\n"
             "  1) Raise your host's own permission prompt to ask the user (or ask in chat if"
-            " it has none): allow writing to %s -- it is only strain's folder.\n"
+            " it has none): allow writing to %s -- it is only strain's folder. %s. Keep the"
+            " prompt open until they answer -- do not end your turn.\n"
             "  2) Once they allow it, run the same command again with that permission.\n"
             "  3) Check it worked: strain-sign.sh --receipt says \"this shell can write\".\n"
             "Not allowed: do not approve it yourself, do not widen it beyond that folder, and do"
             " not move the folder for your shell alone (STRAIN_STATE_DIR) -- the hooks keep"
-            " saving to this one, and they are not affected." % (d, d))
+            " saving to this one, and they are not affected."
+            % (d, d, DESCRIBE_STEP[0].upper() + DESCRIBE_STEP[1:]))
+
+
+# ---- 0.8.3: the start of a session -----------------------------------------------------
+# The approval box a host shows for a command is titled with the AGENT's one-line
+# description of it -- that sentence is all the user sees when deciding. Seen live
+# 2026-10-01: an English description in a session the user had opened in Chinese.
+DESCRIBE_STEP = ("describe the command in the user's language, in plain words, saying what it"
+                 " does for them (for example: 'Turn on strain: track how full this conversation"
+                 " is') -- your host shows that sentence when it asks the user to approve it")
+
+# A folder that names no project: the hook's cwd on local Cowork, a sandbox root.
+_PLACEHOLDER_DIRS = ("/", "/private/var/empty", "/var/empty")
+
+
+def default_agent_name(st):
+    """0.8.3 C4: the name a sign uses when the agent gives none -- '<host> · <project
+    folder>'. The previous-session report finds the same agent BY NAME, so a name that
+    changes between sessions (two sessions of one agent signed as 'Codex-my-app' and
+    'Codex', 2026-09-30) breaks the chain. Where the folder names nothing (local Cowork,
+    a per-session sandbox path), the host name alone."""
+    host = PRODUCT_OF_SUBSTRATE.get(str(st.get("substrate") or ""), "") or "Agent"
+    cwd = str(st.get("cwd") or "") or os.getcwd()
+    norm = os.path.normpath(cwd)
+    folder = ""
+    if norm not in _PLACEHOLDER_DIRS and not norm.startswith("/sessions/"):
+        folder = os.path.basename(norm)
+    return "%s · %s" % (host, folder) if folder else host
+
+
+def plugin_version():
+    try:
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               ".claude-plugin", "plugin.json")) as f:
+            return str(json.load(f).get("version") or "unknown")
+    except Exception:
+        return "unknown"
+
+
+def instruction_files(substrate, cwd):
+    """0.8.3 C6: (global file, [project files]) where this host reads the agent's standing
+    instructions; ("", []) on a host strain knows no file for. Global first: one write
+    covers every project, and it stays on this computer (a project file travels with git)."""
+    home = os.path.expanduser("~")
+    if substrate == "claude-code":
+        proj = [os.path.join(cwd, "CLAUDE.md"), os.path.join(cwd, ".claude", "CLAUDE.md")] if cwd else []
+        return os.path.join(home, ".claude", "CLAUDE.md"), proj
+    if substrate == "codex":
+        ch = os.path.expanduser(os.environ.get("CODEX_HOME") or os.path.join(home, ".codex"))
+        return os.path.join(ch, "AGENTS.md"), ([os.path.join(cwd, "AGENTS.md")] if cwd else [])
+    return "", []
+
+
+START_BLOCK_END = "<!-- /strain:start-steps -->"
+
+
+def start_block(version=None):
+    """The block an agent adds to an instruction file, with the user's consent. The marker
+    carries the version, so a later version can find it and offer an update."""
+    return ("<!-- strain:start-steps %s -->\n"
+            "## Session strain (the strain plugin)\n\n"
+            "If the strain plugin is installed:\n\n"
+            "1. At the start of every session, before your first reply, follow strain's start"
+            " steps (its `start` skill): check that this session is signed in, and sign it in"
+            " if it is not.\n"
+            "2. At the wrap or handoff, follow the wrap steps of the same skill.\n"
+            "%s\n" % (version or plugin_version(), START_BLOCK_END))
+
+
+def block_state(path):
+    """"absent", "present" or "present (strain <version>)" for one instruction file."""
+    import re
+    try:
+        with open(path) as f:
+            txt = f.read()
+    except Exception:
+        return "absent"
+    m = re.search(r"<!-- strain:start-steps (\S+) -->", txt)
+    return "present (strain %s)" % m.group(1) if m else "absent"
+
+
+def prefs_path(sdir):
+    return os.path.join(sdir, "prefs.json")
+
+
+def load_prefs(sdir):
+    d = load(prefs_path(sdir))
+    return d if isinstance(d, dict) else {}
+
+
+def save_pref(sdir, host, key, value):
+    """0.8.3 C6: one answer per host (e.g. "the instruction file was declined"), keyed by
+    the host's product name. False when it could not be written -- then the question
+    simply comes back next session."""
+    p = prefs_path(sdir)
+    with state_lock(p):
+        if os.path.isfile(p):
+            try:
+                with open(p) as f:
+                    d = json.load(f)
+            except Exception:
+                return False            # unreadable: never overwrite other hosts' answers
+            if not isinstance(d, dict):
+                return False
+        else:
+            d = {}
+        entry = d.get(host) if isinstance(d.get(host), dict) else {}
+        entry[key] = value
+        entry["at"] = now_iso()
+        d[host] = entry
+        return save(p, d)
 
 
 def _short_when(ts):

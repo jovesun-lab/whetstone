@@ -38,6 +38,44 @@ Nothing to configure. Nothing leaves your machine.
 
 That number on the first line is measured, not estimated — see below.
 
+## Starting and wrapping a session (0.8.3)
+
+Strain links sessions only when they are **signed**, and before 0.8.3 nothing made signing
+happen at the start: the start line carried calibration only, the sign step first
+appeared at the 10th tool call, and on one host the skill's own description ("not for
+short one-pass tasks") talked the agent out of loading it. Now:
+
+1. **The start line carries the steps.** While a session is unsigned, strain's start line
+   (what the agent reads before its first reply) lists numbered steps with the sign
+   command filled in. The `strain:start` skill holds the same steps, under a name that
+   matches the moment.
+2. **One command, a stable name.** `strain-sign.sh` with no `--agent` signs as
+   `<host> · <project folder>` — for example `Claude Code · my-app` — the same every
+   session, so the next session finds this one. A name you give your agent wins. Where
+   the folder names nothing (local Cowork), the host name alone.
+3. **You are asked properly.** If your host asks you to approve the command, the agent
+   describes it in your language, in plain words, and keeps the prompt open until you
+   answer. Say no, and the agent does not sign and does not ask again before the wrap; the
+   hooks still count.
+4. **Once: the instruction file.** The agent offers to add a short block to your
+   instruction file, so every new session signs in by itself — the global file first
+   (`~/.claude/CLAUDE.md` on Claude Code, `~/.codex/AGENTS.md` on Codex: every project,
+   this computer only), or the project's own file. It shows you the block
+   (`strain-sign.sh --instructions`) and adds it only if you agree. Say no and strain
+   never asks again on that host (`strain-sign.sh --decline-instructions`).
+5. **At the wrap,** the agent checks permission again, then signs if needed and stamps the
+   wrap. Still refused: no stamp, just the counts.
+
+What strain cannot control:
+
+- **Prompts:** the host decides when its prompt closes. Strain tells the agent, in steps
+  and every time, to keep the prompt open until you answer — it cannot enforce that. If a
+  prompt closed unanswered, the agent asks again in chat.
+- **Approval per command:** some hosts ask for each command. Approve each strain command,
+  or approve it for the session where your host offers that.
+- **A session that never wraps** keeps its counts but leaves no stamp; the next session's
+  report says "not wrapped".
+
 ## Two modes, and it always says which
 
 | Mode | When | What you get |
@@ -212,7 +250,7 @@ where the window came from, whether the hooks are saving, whether its own shell 
 (0.8.1; 0.8.0 showed users the agent's version, which was correct and unreadable):
 
 ```
-Strain receipt — host Claude Code · session 0a8e0001 · reading Claude transcript at 09-30 18:15 · measured · window 1M (model hint) · hooks saving (last 09-30 18:15) · this shell can write · no ledger
+Strain receipt — host Claude Code · session 0a8e0001 · signed as Claude Code · my-app · reading Claude transcript at 09-30 18:15 · measured · window 1M (model hint) · hooks saving (last 09-30 18:15) · this shell can write · no ledger
 ```
 
 On Claude Code the hook shows you the sentence itself, once per session (the host's
@@ -229,8 +267,9 @@ Everything strain keeps is in one folder **outside your project**:
 `~/.local/state/strain` (or `$XDG_STATE_HOME/strain`, or wherever `STRAIN_STATE_DIR`
 points). Inside it, every file is either one session's own (`sessions/<id>.json`, a draft
 under `reports/`) or keyed per entry — by session (`index.json`, `model-log.jsonl`), by
-agent (`ledgers.json`) or by product · model (`models.json`). A selftest check walks a full
-scenario and fails if a file appears that no reader could attribute.
+agent (`ledgers.json`), by product · model (`models.json`) or by host (`prefs.json`, 0.8.3:
+an instruction file the user declined). A selftest check walks a full scenario and fails
+if a file appears that no reader could attribute.
 
 - **Sandboxed hosts** (Codex, for one) may refuse the agent's record commands, because they
   write outside the project. The hooks are not affected — the host runs them and they keep
@@ -397,8 +436,10 @@ the command failed in the agent's own shell.)
 | `strain-signal.sh --list` | print this session's signal ledger |
 | `strain-wrap.sh --label "…" [--with-debt]` | stamp this session wrapped / handed off; resets nothing; books a `wrap` row when signed with a ledger |
 | `strain-wrap.sh --status` | show this session's wrap state |
-| `strain-sign.sh --agent <name> [--ledger <path>]` | declare who works this session; with a ledger, book boot-sign/wrap rows and report the previous session of the same agent; the first sign prints the receipt |
-| `strain-sign.sh --receipt` | repeat the user's sentence (stdout) and the agent's details (stderr) |
+| `strain-sign.sh [--agent <name>] [--ledger <path>]` | declare who works this session (with no `--agent`: `<host> · <project folder>`); with a ledger, book boot-sign/wrap rows and report the previous session of the same agent; the first sign prints the receipt |
+| `strain-sign.sh --receipt` | repeat the user's sentence (stdout) and the agent's details (stderr), including "signed as <name>" or "not signed" |
+| `strain-sign.sh --instructions` | print the block for the agent's instruction file, and say where this host's files are and whether the block is in them |
+| `strain-sign.sh --decline-instructions` | the user said no to the instruction file: never offer it again on this host |
 
 Every record command needs this session's key (see *Which session a record lands in*);
 the printed commands carry it.

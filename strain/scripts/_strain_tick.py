@@ -19,7 +19,7 @@ from _strain_common import (TIERS, state_dir, session_path, load, save, blank, n
                             touch_index, read_payload, log_model, floor_tier,
                             signals_of, signal_floor, pattern_note, state_lock,
                             settle_window, k_tokens, why_unsaved, unsaved_marker,
-                            user_messages_on)
+                            user_messages_on, DESCRIBE_STEP)
 import _strain_context as ctxmod
 
 DEFAULT_N = 10          # tool calls between ticks
@@ -346,10 +346,12 @@ def build_directive(n, st, ctx, substrate="", sdir=""):
         bits.append(procedure(kind, why, st, ctx, sdir))
     if not st.get("agent") and not st.get("signNudged"):
         # 0.8.2: said once per session, as a step, not as a principle to remember.
+        # 0.8.3: the command runs as printed (a default name, no placeholder to fill in).
         st["signNudged"] = now_iso()
-        bits.append(" This session is not signed yet. Step: sign it now with `%s`, then tell"
-                    " the user the one sentence it prints." % act_command(
-                        "strain-sign.sh", st, sdir, "--agent '<your name>'"))
+        bits.append(" This session is not signed yet. Step: sign it now with `%s` (keep the"
+                    " default name unless the user gave you one: add --agent '<name>'); %s;"
+                    " then tell the user the one sentence it prints." % (
+                        act_command("strain-sign.sh", st, sdir, "").rstrip(), DESCRIBE_STEP))
     if st.pop("_legacyNote", None):
         bits.append(" NOTE: an old calibration record (calibration.json) has no model, so it"
                     " rules no session -- re-record the window per product and model:"
@@ -390,7 +392,13 @@ def build_directive(n, st, ctx, substrate="", sdir=""):
         " use --caught instead -- it moves nothing). 2) Keep the proposed tier, or change it"
         " only because of step 1 -- never because checks piled up or the last tier was high"
         " -- then record it: `%s`. 3) Tell the user in the shape for this tier. A tier that"
-        " is not recorded stays at its first value.%s [%s]"
+        " is not recorded stays at its first value."
+        # 0.8.3 C9 + C5: the approval box shows the agent's sentence; a refusal is final
+        # for the session (it cannot be stored -- storing needs the permission -- so the
+        # rule rides on every tick).
+        " When a command needs the user's approval, describe it in the user's language, in"
+        " plain words. If the user refused strain's permission in this session, skip steps"
+        " 1-2 and only report the tier in chat -- do not ask again before the wrap.%s [%s]"
         % (n, "" if n == 1 else "s", slot, basis, carried, decay, "".join(bits),
            wrap_line(st),
            act_command("strain-signal.sh", st, sdir, "<kind> --escaped"),

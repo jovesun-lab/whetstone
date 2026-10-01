@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Sign a session -- declare WHO is working it, and optionally which book it belongs to.
 
+    strain-sign.sh                                      sign as '<host> · <project folder>'
     strain-sign.sh --agent ana                          name this session's agent
     strain-sign.sh --agent ana --ledger ./Log.strain    ...and join a project ledger
+    strain-sign.sh --instructions                       the block for the instruction file
+    strain-sign.sh --decline-instructions               the user said no: never offer it again
 
 Why signing exists: one machine, one state dir, more than one agent. The path cannot
 tell agents apart (two windows on one project look identical to the hooks), so
@@ -33,7 +36,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (state_dir, session_path, load, save, now_iso, resolve_sid,
                             resolve_for_write, ledger_append_why, load_ledgers, save_ledgers,
                             ledger_rows, signals_of, state_lock, user_line, details_line,
-                            why_unsaved, write_hint)
+                            why_unsaved, write_hint, default_agent_name, instruction_files,
+                            start_block, block_state, load_prefs, save_pref, prefs_path,
+                            PRODUCT_OF_SUBSTRATE)
 
 
 def _when(ts):
@@ -104,9 +109,15 @@ def main(argv):
     ap.add_argument("--session", default=None)
     ap.add_argument("--state-dir", default=None)
     ap.add_argument("--receipt", action="store_true")
+    ap.add_argument("--instructions", action="store_true")
+    ap.add_argument("--decline-instructions", action="store_true")
     args, _ = ap.parse_known_args(argv)
 
     sdir = state_dir(args.state_dir)
+    if args.instructions:
+        return instructions(sdir, args.session)
+    if args.decline_instructions:
+        return decline_instructions(sdir, args.session, argv)
     if args.receipt:
         # A read: may guess, and says so.
         sid, how = resolve_sid(sdir, args.session)
@@ -121,11 +132,6 @@ def main(argv):
         sys.stderr.write("details: session %s (via %s) · state %s\n" % (sid, how, path))
         return 0
 
-    agent = args.agent or os.environ.get("STRAIN_AGENT")
-    if not agent:
-        sys.stderr.write("usage: strain-sign.sh --agent <name> [--ledger <path>] | --receipt\n")
-        return 2
-
     # 0.8.0 A7: a sign names the session's agent -- it must be THIS session.
     sid, how, refusal = resolve_for_write(sdir, args.session, "strain-sign.sh", argv)
     if refusal:
@@ -138,6 +144,10 @@ def main(argv):
     with state_lock(path):
         st = load(path)
         st.setdefault("sid", sid)
+        # 0.8.3 C4: a name the user gave > the name this session already signed with >
+        # '<host> · <project folder>', the same every session (the chain links by name).
+        agent = (args.agent or os.environ.get("STRAIN_AGENT") or str(st.get("agent") or "")
+                 or default_agent_name(st))
         st["agent"] = agent
         first_sign = not st.get("signedAt")
         st.setdefault("signedAt", now_iso())
@@ -192,6 +202,55 @@ def main(argv):
                      % (sid[:12], how,
                         (" · ledger %s (via %s)" % (ledger, ledger_how))
                         if ledger else " · no ledger"))
+    return 0
+
+
+def instructions(sdir, session):
+    """0.8.3 C6: print the block for the agent's instruction file (stdout -- the agent shows
+    it to the user and adds it only with their consent) and say where this host's files
+    are and whether the block is already in them (stderr, for the agent)."""
+    sid, how = resolve_sid(sdir, session)
+    st = load(session_path(sdir, sid)) if sid else {}
+    substrate = str(st.get("substrate") or os.environ.get("STRAIN_SUBSTRATE") or "")
+    gfile, pfiles = instruction_files(substrate, str(st.get("cwd") or "") or os.getcwd())
+    sys.stdout.write(start_block())
+    if not gfile:
+        sys.stderr.write("instruction file: strain knows no instruction file for this host (%s);"
+                         " add the block wherever your host reads standing instructions.\n"
+                         % (PRODUCT_OF_SUBSTRATE.get(substrate) or "host not seen yet"))
+        return 0
+    sys.stderr.write("instruction file (global, every project): %s -- %s\n"
+                     % (gfile, block_state(gfile)))
+    for p in pfiles:
+        sys.stderr.write("instruction file (this project): %s -- %s\n" % (p, block_state(p)))
+    host = PRODUCT_OF_SUBSTRATE.get(substrate, "")
+    if (load_prefs(sdir).get(host) or {}).get("instructions") == "declined":
+        sys.stderr.write("the user declined this on %s -- do not offer it again.\n" % host)
+    if how.startswith("guessed"):
+        sys.stderr.write("details: session %s %s\n" % (sid[:12], how))
+    return 0
+
+
+def decline_instructions(sdir, session, argv):
+    """0.8.3 C6: the user said no to the instruction file -- never offer it again on this
+    host. If strain's folder cannot be written, the answer cannot be kept, and the
+    question comes back next session."""
+    sid, how, refusal = resolve_for_write(sdir, session, "strain-sign.sh", argv)
+    if refusal:
+        sys.stderr.write(refusal)
+        return 2
+    st = load(session_path(sdir, sid))
+    host = PRODUCT_OF_SUBSTRATE.get(str(st.get("substrate") or ""), "")
+    if not host:
+        sys.stderr.write("could not tell which host this session runs on -- nothing recorded\n")
+        return 2
+    if not save_pref(sdir, host, "instructions", "declined"):
+        p = prefs_path(sdir)
+        sys.stderr.write("could not write state: %s%s\n" % (why_unsaved(p), write_hint(p)))
+        return 1
+    sys.stdout.write("Strain won't ask about this again.\n")
+    sys.stderr.write("details: instruction file declined for %s (session %s via %s)\n"
+                     % (host, sid[:12], how))
     return 0
 
 

@@ -8,8 +8,8 @@ description: >-
   long multi-hour work. Triggers on: session strain, is this session too long, should we
   wrap, context is filling up, running out of context, start a fresh session, why is the
   agent getting worse, session health, strain check, strain tier. Counts the real context
-  size where the host exposes one, and counts behaviour where it does not. Not for short
-  one-pass tasks — there is nothing to measure.
+  size where the host exposes one, and counts behaviour where it does not. For the start
+  of a session and the wrap — signing in, asking permission — use strain:start.
 ---
 
 # Strain
@@ -37,16 +37,23 @@ the state folder and the plugin's path).
 
 ## At the start of a session
 
-1. **Sign.** Run `strain-sign.sh --agent <your name>` (add `--ledger ./Log.strain` if the
-   project keeps one). The first strain tick also prints this command, filled in, if you
-   have not signed yet.
-2. **Tell the user the one sentence it prints** — for example "Strain is on. This
+The full steps — sign, ask permission, offer the instruction file — are in the
+**strain:start** skill. In short:
+
+1. **Sign.** Run the sign command from strain's start line ("STRAIN START"); it is filled
+   in. With no `--agent` it signs as `<host> · <project folder>` — keep that unless the user
+   gave you a name. Add `--ledger ./Log.strain` if the project keeps one.
+2. **Describe it for the user.** When a strain command needs the user's approval,
+   describe it in the user's language, in plain words, saying what it does for them —
+   the host shows that sentence in its approval prompt. Keep the prompt open until they
+   answer; do not end your turn.
+3. **Tell the user the one sentence it prints** — for example "Strain is on. This
    conversation is 12% full — strain will tell you when it's time to wrap up and start
    fresh." Copy it as it is. The longer "Strain receipt" line goes to stderr for you; do
    not paste it at the user.
-3. **If step 1 was refused**, go to *When a record command is refused* below, then come
-   back and sign.
-4. **If there is a ledger,** the sign also prints one line about the previous session of
+4. **If step 1 was refused**, go to *When a record command is refused* below. If the user
+   says no, do not sign and do not ask again before the wrap.
+5. **If there is a ledger,** the sign also prints one line about the previous session of
    the same agent. Tell the user that line too.
 
 ## When the tick fires
@@ -115,12 +122,13 @@ Read the first line of the error, then follow the matching steps.
 **"could not write state" — a permission problem** (sandboxed hosts, Codex for one)
 1. Raise your host's own permission prompt to ask the user (if your host has no prompt,
    ask in chat): allow writing to strain's folder (the error names it) — say it is only
-   strain's folder.
-2. Wait for the user's answer.
+   strain's folder. Describe it in the user's language, in plain words.
+2. Wait for the user's answer: keep the prompt open until they answer — do not end your
+   turn. (Asking in chat: end your turn and wait for the reply.)
 3. If they allow it: run the same command again with that permission.
 4. Check it worked: `strain-sign.sh --receipt` says "this shell can write".
 5. If they refuse: say plainly that strain cannot record for this session; the hooks keep
-   counting on their own.
+   counting on their own. Do not ask again before the wrap; report the tier in chat only.
 
 Not allowed: approving the permission yourself, widening it beyond strain's folder, and
 moving the folder for your shell alone.
@@ -130,9 +138,12 @@ your records and the hooks' counts end up in two different folders.
 ## At the wrap
 
 1. Write your handoff (strain does not; see *Throughline* below).
-2. Stamp the wrap: `strain-wrap.sh --label "<what was handed off>"` (add `--with-debt` if
-   you leave known loose ends).
-3. If you keep working after the stamp, run it again at the next handoff — the tick says
+2. Check permission again: `strain-sign.sh --receipt`. If it says "this shell cannot
+   write" or "not signed", ask the user as in *At the start of a session*, step 2.
+3. Allowed: stamp the wrap: `strain-wrap.sh --label "<what was handed off>"` (add
+   `--with-debt` if you leave known loose ends). Still refused: no stamp — report the
+   counts only.
+4. If you keep working after the stamp, run it again at the next handoff — the tick says
    "N calls since the wrap" until you do.
 
 A stamp means **this session wrapped / handed off** — not "the work is right" (that is
@@ -232,9 +243,9 @@ Match the shape to the tier, so the user can act without asking follow-ups.
 (A sandboxed or remote session, after the user refused or the host has no permission
 prompt.)
 1. Give the user ONE copy-paste line for a plain terminal on their machine, everything
-   filled in: `STRAIN_SESSION=<this session> bash <plugin>/scripts/strain-sign.sh --agent
-   <your name>` (plus `--ledger <path>` if the project keeps one). See "Signing from a bare
-   terminal" in the README.
+   filled in: `STRAIN_SESSION=<this session> bash <plugin>/scripts/strain-sign.sh` (plus
+   `--agent '<name>'` if the user gave you one, and `--ledger <path>` if the project keeps
+   one). See "Signing from a bare terminal" in the README.
 2. Put the command alone in its own code block; the steps go outside it.
 3. Until the user pastes back the `Owner: … — signed` line, report yourself as
    measured-but-unsigned, never as signed.
