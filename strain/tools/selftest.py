@@ -922,6 +922,80 @@ def section_083(tmp):
                               for k, v in prefs.items()), prefs)
 
 
+def section_084(tmp):
+    """0.8.4: strain stays out of a sub-agent's way, and an unattended run is never stopped by
+    the sign-in. Found live (2026-10-08): (1) five read-only sub-agents each got the strain
+    check in their tool results, asking them to run strain commands, and their tool calls
+    were counted into the parent session (its count rose 190 -> 390 while they ran) -- the
+    host sends a sub-agent's hook calls with the parent's session_id and an agent_id;
+    (2) a headless `claude -p` run read the start steps, asked for the sign-in approval that
+    nobody could give, ended its turn and did none of its task."""
+
+    def tk(sdir, sid, agent_id=None, n=1):
+        payload = {"session_id": sid, "cwd": "/tmp/proj", "hook_event_name": "PostToolUse"}
+        if agent_id is not None:
+            payload["agent_id"] = agent_id
+            payload["agent_type"] = "Explore"
+        return run("_strain_tick.py", payload, ["--n", str(n)], {"STRAIN_STATE_DIR": sdir})
+
+    def boot(sdir, sid, entry=None, extra=None):
+        payload = {"session_id": sid, "cwd": "/tmp/proj", "source": "startup",
+                   "hook_event_name": "SessionStart"}
+        e = {"STRAIN_STATE_DIR": sdir, "STRAIN_SUBSTRATE": "claude-code"}
+        if entry is not None:
+            e["CLAUDE_CODE_ENTRYPOINT"] = entry
+        e.update(extra or {})
+        out = run("_strain_reset.py", payload, [], e)[0]
+        try:
+            return json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        except Exception:
+            return out
+
+    # ---- a sub-agent's tool call is neither counted nor spoken to ------------------
+    sdir = os.path.join(tmp, "s084a")
+    tk(sdir, "sess-P", n=100)
+    before = state_of(sdir, "sess-P").get("tick")
+    outs = [tk(sdir, "sess-P", agent_id="a76a31904c612ca62", n=1)[0] for _ in range(3)]
+    after = state_of(sdir, "sess-P").get("tick")
+    check("0.8.4 S1: a sub-agent's tool call is not counted into the parent session",
+          before == 1 and after == 1, (before, after))
+    check("0.8.4 S1: a sub-agent's tool call gets no strain check, even when the count is due",
+          outs == ["", "", ""], outs)
+    tk(sdir, "sess-Q", agent_id="a1", n=100)
+    check("0.8.4 S1: a sub-agent's tool call creates no session file of its own",
+          not os.path.isfile(os.path.join(sdir, "sessions", "sess-Q.json")))
+    o = tk(sdir, "sess-P", agent_id="", n=1)[0]
+    check("0.8.4 S1: an empty agent_id is the main session -- counted, and the check fires",
+          state_of(sdir, "sess-P").get("tick") == 2 and "STRAIN TICK" in o,
+          (state_of(sdir, "sess-P").get("tick"), o[:80]))
+
+    # ---- an unattended run is not asked to sign in --------------------------------
+    sdir = os.path.join(tmp, "s084b")
+    head = boot(sdir, "sess-H", entry="sdk-cli")
+    check("0.8.4 S2: a headless claude -p run gets no sign-in steps to wait on",
+          "end your turn" not in head and "STEPS" not in head, head[:200])
+    check("0.8.4 S2: the headless run is told to carry on with its task, unsigned",
+          "unattended" in head and "carry on" in head, head[:200])
+    check("0.8.4 S2: the headless run is still counted",
+          tk(sdir, "sess-H", n=100) is not None and state_of(sdir, "sess-H").get("tick") == 1,
+          state_of(sdir, "sess-H"))
+    for entry in ("remote_trigger", "remote_cowork_trigger", "github-action"):
+        h = boot(os.path.join(tmp, "s084c-" + entry), "sess-T", entry=entry)
+        check("0.8.4 S2: %s is unattended" % entry, "unattended" in h and "STEPS" not in h, h[:120])
+    for entry in ("claude-desktop", "cli", "claude-vscode", "sdk-ts", None):
+        h = boot(os.path.join(tmp, "s084d-%s" % entry), "sess-I", entry=entry)
+        check("0.8.4 S2: %s keeps the normal sign-in steps" % entry,
+              "STRAIN START -- this session is not signed in yet" in h and "unattended" not in h,
+              h[:120])
+    h = boot(os.path.join(tmp, "s084e"), "sess-O", entry="claude-desktop",
+             extra={"STRAIN_UNATTENDED": "1"})
+    check("0.8.4 S2: STRAIN_UNATTENDED=1 marks any run unattended", "unattended" in h, h[:120])
+    h = boot(os.path.join(tmp, "s084f"), "sess-O", entry="sdk-cli",
+             extra={"STRAIN_UNATTENDED": "0"})
+    check("0.8.4 S2: STRAIN_UNATTENDED=0 keeps the sign-in steps on a headless run",
+          "STRAIN START -- this session is not signed in yet" in h, h[:120])
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="strain-selftest-")
     try:
@@ -1688,6 +1762,7 @@ def main():
         section_080(tmp)
         section_082(tmp)
         section_083(tmp)
+        section_084(tmp)
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

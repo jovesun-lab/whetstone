@@ -36,7 +36,7 @@ from _strain_common import (state_dir, session_path, load, save, blank,
                             settle_window, why_unsaved, user_messages_on,
                             SAVE_FAILED_LINE, DESCRIBE_STEP, default_agent_name,
                             instruction_files, block_state, load_prefs,
-                            PRODUCT_OF_SUBSTRATE)
+                            PRODUCT_OF_SUBSTRATE, unattended)
 from _strain_tick import caps_calibration_line, act_command
 import _strain_context as ctxmod
 
@@ -76,6 +76,11 @@ def start_steps(st, sdir):
     sign step first appeared at the 10th tool call -- a short session never signed, and a
     Codex session never signed at all (its skill description said 'not for short
     one-pass tasks', so it never loaded the skill)."""
+    if unattended():
+        # 0.8.4: nobody can approve a sign-in here; the steps made a headless run stop and wait.
+        return ("STRAIN START -- unattended run (%s): nobody can approve a sign-in, so do not sign"
+                " in and do not wait for anyone; strain still counts this session; carry on with the"
+                " task." % (os.environ.get("CLAUDE_CODE_ENTRYPOINT") or "STRAIN_UNATTENDED"))
     sign = act_command("strain-sign.sh", st, sdir, "").rstrip()
     steps = [
         "STRAIN START -- this session is not signed in yet. STEPS, before your first reply:",

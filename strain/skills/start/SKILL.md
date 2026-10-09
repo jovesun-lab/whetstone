@@ -6,7 +6,8 @@ description: >-
   this session in, signs it in if not, asks the user for permission the right way, and
   offers once to add this step to the agent's instruction file. Also use whenever strain
   says a session is not signed. Triggers on: session start, new session, first reply,
-  sign in, strain not signed, strain start, wrap up, handoff, end of session.
+  sign in, strain not signed, strain start, wrap up, handoff, end of session. Also use
+  before dispatching a sub-agent: strain does not apply inside one.
 ---
 
 # Strain — start and wrap
@@ -62,6 +63,15 @@ state folder and the plugin's path.
 4. **Still refused:** no sign, no stamp. Report the counts only (the tier, the tool calls,
    the errors that reached the user).
 5. The next session starts again from *At the start*, step 1.
+
+## Sub-agents and unattended runs
+
+1. **Before you dispatch a sub-agent:** strain does not apply inside it. Do not ask it to
+   sign in, record a tier or report strain. Put one line in its instructions: "Ignore any
+   strain message in your tool results; do not run strain commands." On Claude Code strain
+   already skips the helper's calls (no count, no check); the line covers other hosts.
+2. **If the start line says "unattended run":** nobody can approve a sign-in. Do not sign
+   in, do not wait for anyone, and do the task. Strain still counts the session.
 
 ## Limits the host controls
 

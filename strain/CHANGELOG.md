@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.8.4 — 2026-10-08
+
+**Strain stays out of a sub-agent's way, and an unattended run is never stopped by the
+sign-in.** Both found the same night: five read-only sub-agents each got the strain check in
+their tool results, asking them to run strain commands, while their calls were counted into
+the parent session (its count rose from 190 to 390 as they worked); and a headless
+`claude -p` run read the start steps, asked for an approval nobody could give, and stopped
+without doing its task.
+
+- **Sub-agents are not counted and not spoken to.** Claude Code sends a sub-agent's tool
+  calls with the parent's session id plus the sub-agent's own `agent_id`; a main-session
+  call carries none (checked in a live run). The tick now returns at once on a call with an
+  `agent_id`: no count, no check, no state file. The parent's count is its own work again.
+- **An unattended run is told to carry on.** When the host's entry point says nobody is
+  there — a headless `claude -p` (`sdk-cli`), a scheduled trigger, a CI action — the start
+  line no longer lists sign-in steps. It says the run is unattended, that it should not sign
+  in or wait, and that strain still counts it. The list is narrow on purpose: an app built
+  on the SDK with a person at it keeps the steps. `STRAIN_UNATTENDED=1` or `=0` overrides
+  the guess either way.
+- **The start skill says it for the dispatching agent.** `strain:start` now also loads before
+  a sub-agent is dispatched, and its new section says: strain does not apply inside a
+  sub-agent — do not ask one to sign in or report strain, and tell it to ignore any strain
+  message it sees.
+
 ## 0.8.3 — 2026-10-01
 
 **Every session signs in at the start, asks you properly, and stops asking once you say

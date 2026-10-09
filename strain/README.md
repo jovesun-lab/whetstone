@@ -76,6 +76,21 @@ What strain cannot control:
 - **A session that never wraps** keeps its counts but leaves no stamp; the next session's
   report says "not wrapped".
 
+## Sub-agents and unattended runs (0.8.4)
+
+Strain measures one conversation with a person in it. Two kinds of run are not that, and
+strain now leaves them alone:
+
+1. **A sub-agent** — a helper your agent starts inside its own session. Claude Code sends
+   its tool calls with the parent's session id and the sub-agent's own `agent_id`; strain
+   skips every call that carries one, so the helper is neither counted into the parent nor
+   handed the strain check. On a host that does not mark sub-agent calls, tell the helper to
+   ignore any strain message it sees (the `strain:start` skill says so).
+2. **An unattended run** — a headless `claude -p`, a scheduled trigger, a CI action. Nobody
+   can approve a sign-in there, so the start line says "unattended run" instead of listing
+   the sign-in steps: do not sign in, do not wait, carry on. Strain still counts the run.
+   Set `STRAIN_UNATTENDED=1` to mark any run unattended, or `=0` to keep the steps.
+
 ## Two modes, and it always says which
 
 | Mode | When | What you get |

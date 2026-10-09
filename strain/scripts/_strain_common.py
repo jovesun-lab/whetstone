@@ -407,6 +407,27 @@ def read_payload(stdin):
         return {}
 
 
+# 0.8.4: the host sends a sub-agent's tool calls with the PARENT's session_id plus the
+# sub-agent's own agent_id; a main-session call carries no agent_id (Claude Code, checked
+# live). Without this test a sub-agent's work was counted into its parent, and the strain
+# check landed in the sub-agent's tool results asking it to run strain commands.
+def is_subagent_call(payload):
+    return bool(str((payload or {}).get("agent_id") or "").strip())
+
+
+# 0.8.4: entry points where nobody can answer a sign-in prompt -- a headless `claude -p`, a
+# scheduled trigger, a CI action. Narrow on purpose: an SDK app with a person at it keeps
+# the steps. STRAIN_UNATTENDED=1 or =0 overrides either way.
+UNATTENDED_ENTRYPOINTS = ("sdk-cli", "remote_trigger", "remote_cowork_trigger", "github-action")
+
+
+def unattended():
+    o = os.environ.get("STRAIN_UNATTENDED", "").strip()
+    if o in ("1", "0"):
+        return o == "1"
+    return os.environ.get("CLAUDE_CODE_ENTRYPOINT", "") in UNATTENDED_ENTRYPOINTS
+
+
 # ---- the project ledger (0.5.0) ------------------------------------------------------
 # A durable, append-only account book a project can keep of its sessions: one JSONL row
 # per event (boot-sign, wrap). Optional -- nothing here runs unless a session signs with

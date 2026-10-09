@@ -19,7 +19,7 @@ from _strain_common import (TIERS, state_dir, session_path, load, save, blank, n
                             touch_index, read_payload, log_model, floor_tier,
                             signals_of, signal_floor, pattern_note, state_lock,
                             settle_window, k_tokens, why_unsaved, unsaved_marker,
-                            user_messages_on, DESCRIBE_STEP)
+                            user_messages_on, DESCRIBE_STEP, is_subagent_call)
 import _strain_context as ctxmod
 
 DEFAULT_N = 10          # tool calls between ticks
@@ -435,6 +435,8 @@ def main():
     sdir = state_dir(args.state_dir)
 
     payload = read_payload(sys.stdin)
+    if is_subagent_call(payload):
+        return 0    # 0.8.4: a sub-agent's call -- not counted into the parent, nothing said
     sid = str(payload.get("session_id", "") or "")
     cwd = str(payload.get("cwd", "") or "")
 
