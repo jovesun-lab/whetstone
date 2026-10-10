@@ -1229,14 +1229,15 @@ def main():
         sys.path.insert(0, SCRIPTS)
         import _strain_tick as tickmod
 
-        def pt(fill, mode="measured", escaped=0, compactions=0, env=None):
+        def pt(fill, mode="measured", escaped=0, compactions=0, env=None, at=None):
             old = {}
             for kk, vv in (env or {}).items():
                 old[kk] = os.environ.get(kk)
                 os.environ[kk] = vv
             try:
                 stx = {"compactions": compactions,
-                       "signals": [{"kind": "k%d" % i, "escaped": True}
+                       "signals": [dict({"kind": "k%d" % i, "escaped": True},
+                                        **({"pct": at[i]} if at else {}))
                                    for i in range(escaped)]}
                 ctxx = {"mode": mode, "pct": fill, "limit": 200000}
                 return tickmod.propose_tier(stx, ctxx)
@@ -1275,6 +1276,44 @@ def main():
         t_, b_, d_ = pt(-5.0)
         check("0.7.0 A2 (was v3-I): pct -5 -> Line A abstains loudly -> UNMEASURED",
               t_ == "UNMEASURED" and "impossible" in b_, (t_, b_))
+
+        # ---- 0.8.5 Line B: only escaped errors made past 50% fill count ----------------
+        # The owner's ruling (2026-10-09): errors before 50% fill are recorded, never tiered;
+        # five made past 50% are High, and Danger once the fill is at 70%.
+        t_, b_, d_ = pt(55.0, escaped=5, at=[51, 52, 53, 54, 55])
+        check("0.8.5 B1: fill 55 + 5 escaped made past 50% -> High (Line B High)",
+              t_ == "High" and "Line B High" in b_, (t_, b_))
+        t_, b_, d_ = pt(72.0, escaped=5, at=[55, 60, 65, 70, 72])
+        check("0.8.5 B2: fill 72 + 5 escaped made past 50% -> Danger (Line B Danger)",
+              t_ == "Danger" and "Line B Danger" in b_, (t_, b_))
+        t_, b_, d_ = pt(55.0, escaped=6, at=[10, 20, 30, 40, 45, 49.9])
+        check("0.8.5 B3: six escaped all made before 50% move nothing (tier = Line A Mid)",
+              t_ == "Mid" and "Line B Healthy" in b_, (t_, b_))
+        t_, b_, d_ = pt(60.0, escaped=7, at=[20, 30, 40, 51, 52, 53, 54])
+        check("0.8.5 B4: four past 50% (+3 before) stay under five -> Line B quiet",
+              "Line B Healthy" in b_ and "after 50%: 4" in b_, (t_, b_))
+        t_, b_, d_ = pt(72.0, escaped=3, at=[60, 65, 70])
+        check("0.8.5 B5: the old composite is gone -- fill 72 + 3 escaped = Warning, not Danger",
+              t_ == "Warning" and "composite" not in b_, (t_, b_))
+        t_, b_, d_ = pt(55.0, escaped=5)
+        check("0.8.5 B6: escaped signals with no recorded fill (made before 0.8.5) are not counted",
+              t_ == "Mid" and "Line B Healthy" in b_, (t_, b_))
+        t_, b_, d_ = pt(None, mode="inferred", escaped=3)
+        check("0.8.5 B7: fill not measurable -> today's ladder stays (3 escaped -> Mid), said so",
+              t_ == "Mid" and "fill unknown" in b_, (t_, b_))
+        t_, b_, d_ = pt(None, mode="inferred", escaped=5)
+        check("0.8.5 B8: fill not measurable, 5 escaped -> Warning (today's ladder)",
+              t_ == "Warning", (t_, b_))
+        t_, b_, d_ = pt(50.0, escaped=5, at=[50.0, 50.0, 50.0, 50.0, 50.0])
+        check("0.8.5 B9: errors made at exactly 50% count (the line is inclusive)",
+              t_ == "High" and "Line B High" in b_, (t_, b_))
+        t_, b_, d_ = pt(70.0, escaped=5, at=[55, 60, 65, 68, 70])
+        check("0.8.5 B10: five past 50% with the fill at exactly 70% -> Danger",
+              t_ == "Danger" and "Line B Danger" in b_, (t_, b_))
+        stc = {"signals": [{"kind": "c%d" % i, "escaped": False, "pct": 60.0} for i in range(6)]}
+        t_, b_, d_ = tickmod.propose_tier(stc, {"mode": "measured", "pct": 60.0, "limit": 200000})
+        check("0.8.5 B11: caught errors past 50% never count (six caught -> Line B quiet)",
+              "Line B Healthy" in b_ and "after 50%: 0" in b_, (t_, b_))
 
         # ---- robustness ---------------------------------------------------------------
         sdir = os.path.join(tmp, "s7")
@@ -1319,50 +1358,57 @@ def main():
         check("a repeated signal class earns a pattern note",
               "Pattern note" in out and "half-mechanism x3" in out, out[:600])
 
-        # ---- hard signals are absolute; escaped ones floor the tier --------------------
+        # ---- escaped signals carry the fill they were made at; below 50% they are kept,
+        # never tiered (0.8.5, the owner's ruling of 2026-10-09) -----------------------
         gdir = os.path.join(tmp, "s9")
         tick(gdir, "sess-P", n=0, transcript=npath)          # 33% fill on a 1M window
         out, _, rc = run("_strain_signal.py", None,
                          ["regression", "--escaped", "--session", "sess-P"],
                          {"STRAIN_STATE_DIR": gdir})
-        check("v3 ladder: one escaped signal moves NOTHING",
-              rc == 0 and state_of(gdir, "sess-P").get("last") == "Healthy", (rc, out))
-        run("_strain_signal.py", None, ["stale-read", "--escaped", "--session", "sess-P"],
-            {"STRAIN_STATE_DIR": gdir})
-        check("v3 ladder: two escaped signals still move nothing",
-              state_of(gdir, "sess-P").get("last") == "Healthy",
-              state_of(gdir, "sess-P"))
-        run("_strain_signal.py", None, ["third-class", "--escaped", "--session", "sess-P"],
-            {"STRAIN_STATE_DIR": gdir})
-        check("v3 ladder: the third escaped floors Mid",
-              state_of(gdir, "sess-P").get("last") == "Mid", state_of(gdir, "sess-P"))
-        run("_strain_signal.py", None, ["fourth-class", "--escaped", "--session", "sess-P"],
-            {"STRAIN_STATE_DIR": gdir})
-        run("_strain_signal.py", None, ["fifth-class", "--escaped", "--session", "sess-P"],
-            {"STRAIN_STATE_DIR": gdir})
-        check("v3 ladder: the fifth escaped floors Warning",
-              state_of(gdir, "sess-P").get("last") == "Warning",
+        sig0 = (state_of(gdir, "sess-P").get("signals") or [{}])[0]
+        check("0.8.5: a signal records the fill it was made at",
+              rc == 0 and abs(float(sig0.get("pct", -1)) - 33.0) < 1.0, (rc, sig0))
+        for kk in ("stale-read", "third-class", "fourth-class", "fifth-class"):
+            run("_strain_signal.py", None, [kk, "--escaped", "--session", "sess-P"],
+                {"STRAIN_STATE_DIR": gdir})
+        check("0.8.5: five escaped at 33% fill move nothing -- recorded and kept, not tiered",
+              state_of(gdir, "sess-P").get("last") == "Healthy"
+              and len(state_of(gdir, "sess-P").get("signals") or []) == 5,
               state_of(gdir, "sess-P"))
         out, _, _ = tick(gdir, "sess-P", n=1, transcript=npath)
-        check("escaped floors survive a low-fill tick",
-              "PROPOSED TIER: Warning" in out, out[:400])
+        check("0.8.5: the next tick proposes Healthy and names 0 counted",
+              "PROPOSED TIER: Healthy" in out and "after 50%: 0" in out, out[:400])
+        udir = os.path.join(tmp, "s9u")                      # no tick: the fill is unknown
+        for kk in ("u1", "u2", "u3"):
+            run("_strain_signal.py", None, [kk, "--escaped", "--session", "sess-U"],
+                {"STRAIN_STATE_DIR": udir})
+        check("0.8.5: fill unknown -- the third escaped still floors Mid (today's ladder)",
+              state_of(udir, "sess-U").get("last") == "Mid"
+              and "pct" not in ((state_of(udir, "sess-U").get("signals") or [{}])[0]),
+              state_of(udir, "sess-U"))
         # v4 COMBINATION ALARM (owner's two-condition composite, restored 2026-09-13):
         # Warning-cap fill (72%, below the derived Danger cap 74) AND >=3 escaped ->
         # Danger, with a loud basis line naming both conditions. Below either
         # precondition the lines stay independent (max only); the throttle-zone note
         # still annotates and never tiers.
+        # 0.8.5: that composite is gone -- the owner's 2026-10-09 ruling: Danger needs five
+        # escaped made past 50% fill AND the fill at 70%, said by Line B.
         wdir = os.path.join(tmp, "s9b")
         wpath = os.path.join(tmp, "warnfill.jsonl")
         make_transcript(wpath, [(2, 10000, 0), (2, 144000, 0)])   # 72% of 200k
+        tick(wdir, "sess-Q", n=0, transcript=wpath)               # measured first: signals carry 72%
         for kk in ("k1", "k2", "k3"):
             run("_strain_signal.py", None, [kk, "--escaped", "--session", "sess-Q"],
                 {"STRAIN_STATE_DIR": wdir})
         out, _, _ = tick(wdir, "sess-Q", n=1, transcript=wpath)
-        check("v4 composite: Warning fill + 3 escaped -> Danger",
-              "PROPOSED TIER: Danger" in out and "Line B Mid" in out, out[:400])
-        check("v4 composite fires LOUDLY (basis names both conditions)",
-              "composite: fill already Warning AND escaped 3 >= 3 -> Danger" in out,
-              out[:600])
+        check("0.8.5: Warning fill + 3 escaped past 50% -> Warning (the old composite is gone)",
+              "PROPOSED TIER: Warning" in out and "composite" not in out, out[:400])
+        for kk in ("k4", "k5"):
+            run("_strain_signal.py", None, [kk, "--escaped", "--session", "sess-Q"],
+                {"STRAIN_STATE_DIR": wdir})
+        out, _, _ = tick(wdir, "sess-Q", n=1, transcript=wpath)
+        check("0.8.5: the fifth escaped past 50% at 72% fill -> Danger, said by Line B",
+              "PROPOSED TIER: Danger" in out and "Line B Danger" in out, out[:600])
         # v4 composite NEGATIVE (capacity precondition unmet): High-cap fill (65%)
         # + 3 escaped stays High -- the combination alarm needs Warning+ fill.
         hdir = os.path.join(tmp, "s9c")

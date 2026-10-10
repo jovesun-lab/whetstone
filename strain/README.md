@@ -392,10 +392,12 @@ Until then the session simply stays unsigned: measured, but part of no chain.
 Hard signals are absolute (capacity never dilutes accountability), but only the ones
 that **escaped** — reached the user or shipped work — move the tier. An error caught
 and fixed before delivery is a working immune system, not exhaustion: it is recorded,
-and a repeat of the same class earns a pattern note, without driving the tier.
+and a repeat of the same class earns a pattern note, without driving the tier. Since
+0.8.5 each signal also records the fill it was made at, and only escaped signals made
+past 50% fill move the tier — earlier ones are kept for the record (Line B, below).
 
-Since v0.3 the tier is a **two-line model** — capacity and conduct scored separately;
-since v0.4 their **combination** can also raise the alarm (see below):
+Since v0.3 the tier is a **two-line model** — capacity and conduct scored separately,
+and the higher one wins:
 
 - **Line A — capacity**: fill vs a cap ladder (defaults **50/60/70%** → Mid/High/Warning,
   and **Danger is derived** = throttle onset − wrap budget, default 80 − 6 = **74%** —
@@ -404,22 +406,24 @@ since v0.4 their **combination** can also raise the alarm (see below):
   percentage) — a missing measurement is never "Healthy (fill 0%)". A misconfigured
   ladder (e.g. a raised wrap budget sliding Danger below Warning) is shouted and the
   built-in defaults stay in force — over-report beats under.
-- **Line B — conduct**: the escaped-signal ladder (0–2 move nothing · 3 → Mid · 4 →
-  High · ≥5 → Warning). A burst of escapes usually shares one root cause — a capability
-  gap, not exhaustion — which is why small counts don't tier.
+- **Line B — conduct** (0.8.5): escaped signals **made past 50% fill** — five of them →
+  **High**, or **Danger** once the fill is at 70%; fewer move nothing. Errors before 50%
+  are mostly an incomplete framework or misleading text, not a tired session, so they are
+  recorded (for experience, statistics and calibrating the framework) and never tiered —
+  the owner's ruling, 2026-10-09. A signal recorded before 0.8.5 carries no fill and is
+  not counted. When the fill cannot be measured there is no 50% line to stand on, so
+  every escaped signal counts on the older ladder (0–2 move nothing · 3 → Mid · 4 → High ·
+  ≥5 → Warning); the basis line says "fill unknown".
 - Compactions are **stated, never a floor** (0.7.0): every tick after one says
   "compaction #N", and a one-time recovery directive asks the agent to re-read its goal.
 - **UNMEASURED** (0.7.0): when Line A abstains and Line B says nothing, the proposal is
   `UNMEASURED` — never "Healthy" — with the command to feed the host's own reading.
 
-The final tier is the **max** of the two lines, plus one **combination alarm** (v0.4): when
-Line A is already at Warning/Danger **and** the escaped count has reached 3, the
-composite tops the proposal out at **Danger**, with a loud basis line naming both
-conditions. It is not a weight or a multiplier — it names the one compound state
-(*running on a full window AND repeatedly shipping errors*) that is more dangerous
-than either line says alone, and it fires only when BOTH preconditions hold: high fill
-with ≤2 escapes stays a capacity story, and a burst of escapes on a half-empty window
-stays a conduct story, each on its own ladder. Errors inside the throttle zone (≥80%)
+The final tier is the **max** of the two lines. (v0.4 to 0.8.4 also had a **combination
+alarm**: Line A at Warning/Danger **and** 3 escaped → Danger. 0.8.5 removes it — the
+owner's ruling puts that compound state inside Line B, at five escapes made past 50%
+with the fill at 70%, and a second, looser path to Danger would contradict it.) Errors
+inside the throttle zone (≥80%)
 are still *annotated* as likely capacity-induced, never auto-escalated: the two lines
 answer different questions. The proposal is still allowed to DECAY when the load does, and
 nothing escalates on tick count — the old "continuing past a Warning ⇒ Danger" rule

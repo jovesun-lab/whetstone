@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.8.5 — 2026-10-10
+
+**Mistakes made early in a conversation no longer push it toward a wrap.** Strain used
+to count every error that reached you from the first message: three of them made the tier
+Mid, five made it Warning, and three at a 70% fill made it Danger. Early errors are mostly
+an incomplete framework or misleading text, not a tired session — so a session was told to
+wrap at 23% full when it was fine.
+
+- **Only errors made past 50% count toward the tier.** Each recorded error now carries how
+  full the conversation was when it was made. Past 50%, five errors that reached you make
+  the tier **High**, and **Danger** once the conversation is 70% full; fewer move nothing.
+  Earlier errors are still recorded — for experience, statistics and calibrating the
+  framework — and still earn a pattern note when one kind repeats; they just do not tier.
+  The basis line says how many counted: `Line B Healthy (escaped 4, after 50%: 0)`.
+- **The old "70% full + 3 errors = Danger" rule is gone** — the new rule above is the only
+  way errors reach Danger.
+- **When strain cannot tell how full the conversation is**, there is no 50% line to stand
+  on, so every error that reached you counts as before (3 → Mid · 4 → High · 5+ → Warning),
+  and the basis line says `fill unknown`.
+- Errors recorded before this version carry no fill and are not counted on a session whose
+  fill is known.
+
 ## 0.8.4 — 2026-10-08
 
 **Strain stays out of a sub-agent's way, and an unattended run is never stopped by the

@@ -32,6 +32,8 @@ STATE SCHEMA (one JSON object per session file)
     signedAt      0.8.0: first sign (the receipt prints once, at it)
     receiptShown  0.8.0: when the hook showed the receipt to the user (Claude Code)
     lastProposal  0.8.0: the last proposed tier, so a NEW UNMEASURED can be told once
+    signals       [{ts, kind, escaped, pct?}] -- hard signals (_strain_signal.py); 0.8.5: `pct`
+                  is the fill when the signal was recorded, present only when it was measured
     legacyNoted   0.8.0: the "old record has no model" note was given
 
 NOTHING RESETS (0.7.0)
@@ -330,31 +332,75 @@ def signals_of(st):
     return s if isinstance(s, list) else []
 
 
-def signal_floor(st):
-    """The tier hard signals justify on their own -- ABSOLUTE, never diluted by capacity.
+# Line B policy (0.8.5) -- TEAM POLICY, deliberately code constants and NOT env knobs (a
+# policy adjustable by environment fiddling is an instrument whose meaning can drift
+# silently; change these by team decision + edit, so the change is visible in review).
+# The owner's ruling, 2026-10-09 23:18: errors before 50% fill are mostly an incomplete
+# framework or misleading text, not a tired session -- they are recorded (for experience,
+# statistics and calibrating the framework) but only escaped errors made at or past 50%
+# fill count toward the tier; five of them is High, and Danger once the fill is at 70%
+# (23:24: "High the same way").
+SIGNALS_FROM_PCT = 50.0
+SIGNALS_TO_TIER = 5
+SIGNALS_DANGER_PCT = 70.0
+FILL_MODES = ("measured", "estimated", "agent-fed")
+
+
+def trusted_fill(ctx):
+    """The fill as a number when it can be trusted (a scored mode, 0..100), else None --
+    the one test of "do we know how full this session is", for Line A and Line B alike."""
+    ctx = ctx if isinstance(ctx, dict) else {}
+    if str(ctx.get("mode") or "") not in FILL_MODES:
+        return None
+    try:
+        p = float(ctx.get("pct"))
+    except (TypeError, ValueError):
+        return None
+    return p if 0.0 <= p <= 100.0 else None
+
+
+def counted_signals(st):
+    """Escaped signals recorded at or past SIGNALS_FROM_PCT fill. A signal without a
+    recorded fill (made before 0.8.5, or while the fill was unknown) is not counted."""
+    out = []
+    for s in signals_of(st):
+        pct = s.get("pct")
+        if s.get("escaped") and isinstance(pct, (int, float)) and not isinstance(pct, bool) \
+                and pct >= SIGNALS_FROM_PCT:
+            out.append(s)
+    return out
+
+
+def signal_floor(st, ctx=None):
+    """The tier hard signals justify on their own (Line B).
 
     Only signals that ESCAPED (reached the user / shipped work before being caught)
-    drive the tier. A caught-and-fixed error is a working immune system, not exhaustion
+    can drive the tier. A caught-and-fixed error is a working immune system, not exhaustion
     -- it is recorded, and a repeat of the same class earns a pattern note, but the
     tier's job is to answer "can this session keep going?", which a caught error does
     not change. (Third fixture, 2026-08-15: three same-class caught-and-fixed errors at
     33% fill -- v1 ratcheted to Danger; the session was fine.)
+
+    0.8.5: with a trusted fill, only escaped signals made past SIGNALS_FROM_PCT count:
+    SIGNALS_TO_TIER of them -> High, or Danger when the fill is at SIGNALS_DANGER_PCT.
+    With no trusted fill there is no 50% line to stand on, and escaped errors are the
+    only gauge: the v3 ladder stays (3 -> Mid, 4 -> High, >=5 -> Warning) -- a default,
+    put to the owner (2026-10-10).
     """
-    escaped = sum(1 for s in signals_of(st) if s.get("escaped"))
-    # v3 ladder -- TEAM POLICY, deliberately code constants and NOT env knobs (a
-    # policy adjustable by environment fiddling is an instrument whose meaning can
-    # drift silently; change these by team decision + edit, so the change is visible
-    # in review). Rationale for the default: escaped errors often arrive in a burst
-    # that shares ONE root cause (a capability gap -- the agent lacks a discipline
-    # for some class of task), and a capability gap is not exhaustion. 0-2 escaped
-    # move nothing on their own; a wider spread starts to look like degradation:
-    # 3 -> Mid, 4 -> High, >=5 -> Warning. Tune to your team's error tolerance.
-    if escaped >= 5:
-        return "Warning"
-    if escaped == 4:
-        return "High"
-    if escaped == 3:
-        return "Mid"
+    if ctx is None:
+        ctx = st.get("ctx") or {}
+    fill = trusted_fill(ctx)
+    if fill is None:
+        escaped = sum(1 for s in signals_of(st) if s.get("escaped"))
+        if escaped >= 5:
+            return "Warning"
+        if escaped == 4:
+            return "High"
+        if escaped == 3:
+            return "Mid"
+        return None
+    if len(counted_signals(st)) >= SIGNALS_TO_TIER:
+        return "Danger" if fill >= SIGNALS_DANGER_PCT else "High"
     return None
 
 

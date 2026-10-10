@@ -16,14 +16,17 @@ WHY CAUGHT AND ESCAPED ARE DIFFERENT
     fixed errors read the same as three shipped ones and the tier ratcheted to Danger at
     33% fill (fixture, 2026-08-15). A caught-and-fixed error is a working immune system:
     it is recorded here, it feeds the pattern note, and it does NOT move the tier. Only
-    ESCAPED signals floor the tier (1 -> High, 2+ -> Warning; with fill already past the
-    Warning band, an escaped signal is what justifies Danger).
+    ESCAPED signals can floor the tier -- the ladder is signal_floor's (_strain_common.py).
+    0.8.5: a signal also records the fill it was made at (`pct`, when the fill is trusted);
+    with a trusted fill only escaped signals made past 50% count -- earlier ones are kept
+    for the record and never tiered (the owner's ruling, 2026-10-09 23:18 / 23:24).
 """
 import argparse, json, sys, os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (state_lock, state_dir, session_path, load, save, blank, now_iso,
                             resolve_sid, resolve_for_write, signals_of, signal_floor,
+                            trusted_fill, SIGNALS_FROM_PCT,
                             pattern_note, floor_tier, why_unsaved,
                             write_hint)
 
@@ -72,6 +75,9 @@ def main(argv):
         return 2
 
     sig = {"ts": now_iso(), "kind": str(args.kind), "escaped": bool(args.escaped)}
+    fill = trusted_fill(st.get("ctx"))
+    if fill is not None:
+        sig["pct"] = round(fill, 1)     # 0.8.5: the fill it was made at -- Line B reads it
     st.setdefault("signals", [])
     if not isinstance(st["signals"], list):
         st["signals"] = []
@@ -90,8 +96,11 @@ def main(argv):
     bits = ["recorded %s signal '%s' for session %s (resolved by %s)"
             % ("ESCAPED" if sig["escaped"] else "caught", sig["kind"],
                sid or "unknown", how)]
+    if sig["escaped"] and fill is not None and fill < SIGNALS_FROM_PCT:
+        bits.append("made at %.1f%% fill, before %g%%: kept for the record, not tiered"
+                    % (fill, SIGNALS_FROM_PCT))
     if floor:
-        bits.append("tier floored to at least %s (escaped signals are absolute)" % floor)
+        bits.append("tier floored to at least %s (escaped signals, signal_floor)" % floor)
     note = pattern_note(st)
     if note:
         bits.append(note)

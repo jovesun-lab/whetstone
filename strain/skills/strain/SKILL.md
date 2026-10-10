@@ -206,19 +206,20 @@ the tier; you confirm it or change it with what the counters cannot see.
 - **Line A — capacity:** fill against caps **50 / 60 / 70 / 74%** → Mid / High / Warning /
   Danger (Danger is derived = throttle onset 80 − wrap budget 6, so a mandated wrap can
   finish before the model degrades). It **abstains** when the number cannot be trusted.
-- **Line B — conduct:** escaped signals — 0–2 move nothing · 3 → Mid · 4 → High · 5+ →
-  Warning. A burst usually shares one root cause (a capability gap), not exhaustion.
-- **Combination:** fill already at Warning/Danger **and** 3+ escaped → Danger.
+- **Line B — conduct:** escaped signals **made past 50% fill** (each signal records the
+  fill it was made at) — 5 → High, or Danger once the fill is at 70%; fewer move nothing.
+  Earlier ones are kept for the record, never tiered. When the fill cannot be measured,
+  every escaped signal counts: 3 → Mid · 4 → High · 5+ → Warning.
 - **UNMEASURED:** Line A abstains and Line B says nothing. Never Healthy; see *When strain
   cannot measure*.
 
 | Tier | Fill cap | Also reached by | What it means |
 |---|---|---|---|
 | **Healthy** | under 50% | — | carry on |
-| **Mid** | 50–60% | 3 escaped signals | fine, but the end is in sight |
-| **High** | 60–70% | 4 escaped signals | wrap after the current thread |
-| **Warning** | 70–74% | 5+ escaped signals | wrap now; new work should start fresh |
-| **Danger** | 74%+ | Warning-level fill **plus** 3+ escaped | stop and hand off |
+| **Mid** | 50–60% | 3 escaped (fill unknown only) | fine, but the end is in sight |
+| **High** | 60–70% | 5 escaped made past 50% (or 4 escaped, fill unknown) | wrap after the current thread |
+| **Warning** | 70–74% | 5+ escaped (fill unknown only) | wrap now; new work should start fresh |
+| **Danger** | 74%+ | 5 escaped made past 50%, with the fill at 70%+ | stop and hand off |
 
 **Raise the tier only on evidence, never on momentum.** Ticks piling up is not evidence; a
 previous high reading is not evidence. Fill crossing a cap and fresh escaped signals are

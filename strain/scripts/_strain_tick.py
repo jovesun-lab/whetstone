@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (TIERS, state_dir, session_path, load, save, blank, now_iso,
                             touch_index, read_payload, log_model, floor_tier,
                             signals_of, signal_floor, pattern_note, state_lock,
+                            trusted_fill, counted_signals, FILL_MODES, SIGNALS_FROM_PCT,
                             settle_window, k_tokens, why_unsaved, unsaved_marker,
                             user_messages_on, DESCRIBE_STEP, is_subagent_call)
 import _strain_context as ctxmod
@@ -79,19 +80,13 @@ def propose_tier(st, ctx):
     Line B = the escaped-signal ladder (signal_floor -- ONE home for the policy).
     Compaction floor rides as a third max() term.
 
-    Synthesis: each line scores SEPARATELY, then ONE alarm comes out of max() plus a
-    single COMBINATION term -- the composite: fill already inside the Warning/Danger
-    caps AND escaped >= 3 -> Danger, printed loudly whenever it fires. The two lines
-    answer different questions (is the window full? / is work escaping wrong?); the
-    composite does not weight or multiply them -- it names the one compound state
-    ("running on a full window AND repeatedly shipping errors") that is more dangerous
-    than either line says alone, and it needs BOTH preconditions. Errors inside the
+    Synthesis: each line scores SEPARATELY, then ONE alarm comes out of max(). 0.8.5:
+    the old combination term (fill inside the Warning/Danger caps AND escaped >= 3 ->
+    Danger, restored 2026-09-13) is gone -- the owner's 2026-10-09 23:18 ruling sets the
+    compound state itself inside Line B ("five such errors and the fill at 70% is
+    Danger"), so a second, looser Danger path would contradict it. Errors inside the
     throttle zone are still ANNOTATED as likely capacity-induced, never
-    auto-escalated. The cruder v2 composite ("escaped signal past the Warning band =>
-    Danger" -- no capacity precondition) stays deleted; this is the owner's original
-    two-condition design (from an internal pre-release iteration, never a formal
-    release of this plugin), restored 2026-09-13 after review found the deletion had
-    shipped unratified. Tick count never escalates anything -- v1's tick-ratchet
+    auto-escalated. Tick count never escalates anything -- v1's tick-ratchet
     pinned Danger at a measured 33%% fill, three fixtures running, and stays deleted.
     Returns (tier, basis, directives)."""
     ctx = ctx or {}
@@ -104,7 +99,7 @@ def propose_tier(st, ctx):
     pct = ctx.get("pct")
     line_a = "Healthy"
     a_scored = False
-    if mode not in ("measured", "estimated", "agent-fed") or pct is None:
+    if mode not in FILL_MODES or pct is None:
         logs.append("Line A abstains: no trustworthy fill measurement (mode %s)"
                     % (mode or "none"))
     elif not (0.0 <= float(pct) <= 100.0):
@@ -129,9 +124,14 @@ def propose_tier(st, ctx):
         logs.append("Line A %s (fill %s%%%s)"
                     % (line_a, pct, {"estimated": ", estimated",
                                      "agent-fed": ", agent-fed"}.get(mode, "")))
-    line_b = signal_floor(st) or "Healthy"
+    line_b = signal_floor(st, ctx) or "Healthy"
     escaped = sum(1 for s in signals_of(st) if s.get("escaped"))
-    logs.append("Line B %s (escaped %d)" % (line_b, escaped))
+    if trusted_fill(ctx) is None:
+        logs.append("Line B %s (escaped %d, fill unknown: every escaped counts)"
+                    % (line_b, escaped))
+    else:
+        logs.append("Line B %s (escaped %d, after %g%%: %d)"
+                    % (line_b, escaped, SIGNALS_FROM_PCT, len(counted_signals(st))))
     # 0.7.0: a compaction is STATED, never a tier floor. It says the context was cut, not
     # that the session is loaded -- the fill after it is what measures the load.
     comp = int(st.get("compactions", 0))
@@ -140,16 +140,9 @@ def propose_tier(st, ctx):
         directives.append("RECOVERY DIRECTIVE: context was cut unfiltered (%d time%s)"
                           " -- re-read the goal anchor and the handoff."
                           % (comp, "s" if comp > 1 else ""))
-    # The combination alarm: both preconditions, loud print, no weighting.
-    line_d = "Healthy"
-    if a_scored and line_a in ("Warning", "Danger") and escaped >= 3:
-        line_d = "Danger"
-        logs.append("composite: fill already %s AND escaped %d >= 3 -> Danger"
-                    % (line_a, escaped))
     val_a = TIERS.index(line_a) if a_scored else 0
     val_b = TIERS.index(line_b)
-    val_d = TIERS.index(line_d)
-    final = max(val_a, val_b, val_d)
+    final = max(val_a, val_b)
     tier = TIERS[final]
     if val_b > val_a and val_b == final:
         logs.append("tier clamped by Line B (escaped conduct)")
