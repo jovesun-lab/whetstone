@@ -361,6 +361,25 @@ unchanged. Appends are flock-guarded, so concurrent signers cannot tear a row.
 The path needs saying only **once** (0.5.1): it is remembered per agent
 (`ledgers.json` in the state dir), so later sessions sign with `--agent` alone.
 
+### Session numbers (0.9.0)
+
+With a ledger, the sign gives the session its **number** and says it in the receipt —
+`Strain · Owner: ana · S12 — signed · booked` — and writes it into the `boot-sign` row
+(`"n": 12`). Like a CI run number it is given at the start and kept on resume: the same
+session signing again gets the same number. Like a database sequence, a number once given
+is never reused: a crash may leave a gap, never a duplicate. The book is read, the number
+picked and the row appended under one lock on the book, so two sessions signing in the
+same second cannot both take the same number. (Numbering at the end of a session, from
+finished reports, cannot see a session still running — two chats got one number that way.)
+
+- **A book that already has signs from before 0.9.0** gives no number until it is seeded
+  once with the next number: `strain-sign.sh --agent ana --seed 12`. A seed at or below a
+  number the book already gave is refused, and nothing is booked.
+- **A session that continues another** (a rewind, a restart that opened a new host session)
+  can take over its number: `strain-sign.sh --continue <previous session id>`. The row
+  records `"continues"`, and it is not counted as a clash.
+- **Two sessions on one number** in a book are named at the sign, in plain words.
+
 ### Signing from a bare terminal
 
 The sign does not have to come from inside the agent's own shell. Some sessions

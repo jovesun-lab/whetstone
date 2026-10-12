@@ -53,7 +53,9 @@ state folder and the plugin's path.
 
 ## At the wrap
 
-1. Write your handoff (strain does not).
+1. Write your handoff (strain does not). If your sessions are numbered, take this session's
+   number from the sign receipt (`Owner: <name> · S<n>`, 0.9.0) — never count it from
+   earlier handoffs or reports: a session still running elsewhere has none yet.
 2. **Check again:** `strain-sign.sh --receipt`. If it says "this shell cannot write" or
    "not signed", ask the user for permission as in steps 3–4 above — keep the prompt open
    until they answer, do not end your turn.

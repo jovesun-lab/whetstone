@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.9.0 — 2026-10-11
+
+**A session gets its number when it signs in, not when it wraps.** Two chats of one agent
+both called themselves session 8: each took "the highest number in the finished reports + 1"
+at its wrap, and a chat still running has no report yet.
+
+- **The sign gives the number** and says it in the receipt (`Owner: ana · S12`); the
+  `boot-sign` row carries `"n"`. The same session signing again keeps its number.
+- **One lock on the book** around read, pick and append — two sessions signing in the same
+  second get two numbers. A number is never reused; a crash leaves a gap, never a duplicate.
+- **`--seed <n>`** sets the next number once, for a book that has signs from before numbering
+  (such a book gives no number until seeded, rather than a guess that could clash); a seed at
+  or below a number already given is refused.
+- **`--continue <session id>`** lets a session that continues another (a rewind, a restart)
+  take over its number; the row records `"continues"`.
+- **Two sessions on one number** in a book are named at the sign.
+- Selftest section 0.9.0: 21 checks, written first and seen red; 11 deliberate breaks on a
+  copy, each red. The first real-data run (copies of three books) found one more: the
+  number's bookkeeping overwrote where the receipt says the session id came from — now a
+  check, then fixed.
+
 ## 0.8.5 — 2026-10-10
 
 **Mistakes made early in a conversation no longer push it toward a wrap.** Strain used

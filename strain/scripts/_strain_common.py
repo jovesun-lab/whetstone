@@ -554,25 +554,135 @@ def save_ledgers(sdir, agent, ledger):
         return False
 
 
-def ledger_rows(path):
-    """The ledger's rows, file order. Unparseable lines are skipped, never fatal -- a
-    torn tail must not hide the rest of the book."""
+def rows_of_text(text):
+    """Book rows from the book's text, file order. Unparseable lines are skipped, never
+    fatal -- a torn tail must not hide the rest of the book."""
     rows = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+            if isinstance(r, dict):
+                rows.append(r)
+        except Exception:
+            continue
+    return rows
+
+
+def ledger_rows(path):
+    """The ledger's rows, file order (rows_of_text)."""
     try:
         with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    r = json.loads(line)
-                    if isinstance(r, dict):
-                        rows.append(r)
-                except Exception:
-                    continue
+            return rows_of_text(f.read())
     except Exception:
-        pass
-    return rows
+        return []
+
+
+# ---- 0.9.0: a session number at the sign -----------------------------------------------
+# Found live (2026-10-11): two chats of one agent both called themselves session 8. Each
+# took "the highest number in the finished reports + 1" at its wrap, and a chat still
+# running has no report yet. The number now comes from the agent's book when the session
+# signs in. Like a CI run number, it is given at the start and kept on resume; like a
+# database sequence, a number once given is never reused (a crash leaves a gap, never a
+# duplicate).
+
+def _number(r):
+    n = r.get("n")
+    return n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else None
+
+
+def session_number(rows, agent, sid, cont=None):
+    """The number a sign gives -> (n, how). Pure: book rows in, answer out.
+    how: 'same' -- this session already has a number (resume, re-sign);
+         'continue' -- it continues a numbered session (a rewind, a restart) and takes its number;
+         'new' -- the agent's highest number + 1, or the seed if that is higher;
+         'unseeded' -- n is None: the book holds older signs of this agent without numbers
+                       and no seed, so any number would be a guess that could clash."""
+    agent = str(agent)
+    signs = [r for r in rows if r.get("type") == "boot-sign" and str(r.get("agent") or "") == agent]
+    for r in signs:
+        if r.get("session") == sid and _number(r):
+            return _number(r), "same"
+    if cont:
+        for r in signs:
+            if r.get("session") == cont and _number(r):
+                return _number(r), "continue"
+    nums = [_number(r) for r in signs if _number(r)]
+    seeds = [r.get("next") for r in rows if r.get("type") == "seed" and str(r.get("agent") or "") == agent
+             and _number({"n": r.get("next")})]
+    if not nums and not seeds and signs:
+        return None, "unseeded"
+    return max([1] + [max(nums) + 1 if nums else 1] + seeds), "new"
+
+
+def duplicate_numbers(rows):
+    """{(agent, n): [session ids]} for every number two sessions of one agent share. Must stay
+    empty. A re-sign of one session and a session that names the one it continues are not clashes."""
+    seen, cont = {}, {}
+    for r in rows:
+        if r.get("type") != "boot-sign" or not _number(r) or not r.get("session"):
+            continue
+        key = (str(r.get("agent") or ""), _number(r))
+        sids = seen.setdefault(key, [])
+        if r["session"] not in sids:
+            sids.append(r["session"])
+        if r.get("continues"):
+            cont.setdefault(key, set()).add(r["session"])
+    out = {}
+    for key, sids in seen.items():
+        real = [s for s in sids if s not in cont.get(key, set())]
+        if len(real) > 1:
+            out[key] = real
+    return out
+
+
+def ledger_sign(path, row, cont=None, seed=None):
+    """Book a boot-sign row WITH its session number, in ONE flock on the book: read the book,
+    pick the number, append. Two sessions signing in the same second cannot both read the same
+    highest number. seed: write a seed row first ("the next new session gets this number"), refused
+    when a number at or above it was already given -- numbers are never reused.
+    Returns (n, how, rows_before, why): why is "" on success; how 'seed-refused' books nothing."""
+    try:
+        import fcntl
+        with open(path, "a+") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                f.seek(0)
+                rows = rows_of_text(f.read())
+                agent = str(row.get("agent") or "")
+                out = []
+                if seed is not None:
+                    given = [_number(r) for r in rows if r.get("type") == "boot-sign"
+                             and str(r.get("agent") or "") == agent and _number(r)]
+                    if not _number({"n": seed}) or (given and seed <= max(given)):
+                        return None, "seed-refused", rows, ""
+                    out.append({"type": "seed", "ts": row.get("ts"), "agent": agent, "next": seed})
+                n, how = session_number(rows + out, agent, row.get("session"), cont)
+                r = dict(row)
+                if n is not None:
+                    r["n"] = n
+                if how == "continue":
+                    r["continues"] = cont
+                out.append(r)
+                f.seek(0, 2)
+                f.write("".join(json.dumps(x) + "\n" for x in out))
+                f.flush()
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+        return n, how, rows, ""
+    except Exception:
+        d = os.path.dirname(os.path.abspath(path))
+        if not os.path.isdir(d):
+            why = "the folder %s does not exist" % d
+        elif os.path.exists(path) and not os.access(path, os.W_OK):
+            why = "no write permission on %s" % path
+        elif not os.access(d, os.W_OK):
+            why = "no write permission in the folder %s" % d
+        else:
+            why = "the append failed (lock or write error) on %s" % path
+        return None, "failed", ledger_rows(path), why
 
 
 # ---- 0.6.0: the context FEED DOOR -----------------------------------------------------

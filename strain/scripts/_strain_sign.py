@@ -38,7 +38,7 @@ from _strain_common import (state_dir, session_path, load, save, now_iso, resolv
                             ledger_rows, signals_of, state_lock, user_line, details_line,
                             why_unsaved, write_hint, default_agent_name, instruction_files,
                             start_block, block_state, load_prefs, save_pref, prefs_path,
-                            PRODUCT_OF_SUBSTRATE)
+                            PRODUCT_OF_SUBSTRATE, ledger_sign, duplicate_numbers)
 
 
 def _when(ts):
@@ -111,6 +111,8 @@ def main(argv):
     ap.add_argument("--receipt", action="store_true")
     ap.add_argument("--instructions", action="store_true")
     ap.add_argument("--decline-instructions", action="store_true")
+    ap.add_argument("--continue", dest="cont", default=None)   # 0.9.0: the session this one continues
+    ap.add_argument("--seed", type=int, default=None)          # 0.9.0: the next number, once per book
     args, _ = ap.parse_known_args(argv)
 
     sdir = state_dir(args.state_dir)
@@ -174,20 +176,38 @@ def main(argv):
             sys.stderr.write("could not write state: %s%s\n" % (why_unsaved(path), write_hint(path)))
             return 1
 
-    book_note, report, why = "", "", ""
+    book_note, report, why, num_note, clash_note = "", "", "", "", ""
     if ledger:
-        rows = ledger_rows(ledger)
+        # 0.9.0: the number is given here, in one lock with the append (ledger_sign).
+        row = {"type": "boot-sign", "ts": now_iso(), "session": sid, "agent": agent}
+        n, num_how, rows, why = ledger_sign(ledger, row, cont=args.cont, seed=args.seed)
+        if num_how == "seed-refused":
+            sys.stderr.write("seed refused: %s is not above a number this book already gave %s -- "
+                             "numbers are never reused; nothing was booked\n" % (args.seed, agent))
+            return 2
         if not any(r.get("type") == "boot-sign" and r.get("session") == sid for r in rows):
             report = previous_session_report(sdir, rows, str(agent), sid)   # first sign only
-        row = {"type": "boot-sign", "ts": now_iso(), "session": sid, "agent": agent}
-        why = ledger_append_why(ledger, row)
         if not why:
             book_note = " · booked"
             save_ledgers(sdir, agent, ledger)
+            if n:
+                num_note = " · S%d" % n
+            elif num_how == "unseeded":
+                sys.stderr.write("no session number yet: this book has signs of %s from before numbering. "
+                                 "Seed it once with the next number: strain-sign.sh --seed <n>\n" % agent)
+            if args.cont and num_how == "new":
+                sys.stderr.write("--continue %s: that session has no number in this book; "
+                                 "this session got a new one\n" % args.cont)
+            clashes = sorted(k[1] for k in duplicate_numbers(ledger_rows(ledger)) if k[0] == str(agent))
+            if clashes:
+                clash_note = "two sessions of %s share %s in this book -- one of them needs another number" % (
+                    agent, ", ".join("S%d" % c for c in clashes))
         else:
             book_note = " · WARNING: the book could not be written"
             report = ""
-    sys.stdout.write("Strain · Owner: %s — signed%s\n" % (agent, book_note))
+    sys.stdout.write("Strain · Owner: %s%s — signed%s\n" % (agent, num_note, book_note))
+    if clash_note:
+        sys.stdout.write(clash_note + "\n")
     if report:
         sys.stdout.write(report + "\n")
     if first_sign:

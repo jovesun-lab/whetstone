@@ -996,6 +996,153 @@ def section_084(tmp):
           "STRAIN START -- this session is not signed in yet" in h, h[:120])
 
 
+def section_090(tmp):
+    """0.9.0: a session gets its number when it signs in, not when it wraps. Found live: two
+    chats of one agent both called themselves session 8 -- each took "the highest number in
+    the finished reports + 1" at its wrap, and a chat still running has no report yet. The
+    number now comes from the agent's book at the sign, under one lock on the book."""
+    sys.path.insert(0, SCRIPTS)
+    import _strain_common as C
+
+    def sg(agent, sid, n=None, **kw):
+        r = {"type": "boot-sign", "ts": "2026-10-11T22:00:00-0700", "session": sid, "agent": agent}
+        if n is not None:
+            r["n"] = n
+        r.update(kw)
+        return r
+
+    sn = getattr(C, "session_number", None)
+    check("0.9.0 N1: session_number exists (pure: book rows in, number out)", callable(sn))
+    if callable(sn):
+        check("0.9.0 N2: an empty book gives session 1", sn([], "ana", "s1") == (1, "new"), sn([], "ana", "s1"))
+        rows = [sg("ana", "s1", 1), sg("ana", "s2", 2), sg("bo", "t1", 9)]
+        check("0.9.0 N3: the next number is the agent's highest + 1 -- another agent's rows never count",
+              sn(rows, "ana", "s3") == (3, "new"), sn(rows, "ana", "s3"))
+        check("0.9.0 N4: the same session signing again keeps its number (resume, re-sign)",
+              sn(rows, "ana", "s1") == (1, "same"), sn(rows, "ana", "s1"))
+        check("0.9.0 N5: --continue takes over the number of the session it continues",
+              sn(rows, "ana", "s9", cont="s2") == (2, "continue"), sn(rows, "ana", "s9", cont="s2"))
+        old = [sg("ana", "o1"), sg("ana", "o2")]
+        check("0.9.0 N6: a book with older unnumbered signs and no seed gives NO number (a guess could clash)",
+              sn(old, "ana", "s3") == (None, "unseeded"), sn(old, "ana", "s3"))
+        seeded = old + [{"type": "seed", "ts": "2026-10-11T22:00:00-0700", "agent": "ana", "next": 67}]
+        check("0.9.0 N7: a seed sets the next number", sn(seeded, "ana", "s3") == (67, "new"), sn(seeded, "ana", "s3"))
+        check("0.9.0 N8: after the seed, numbers follow the highest given",
+              sn(seeded + [sg("ana", "s3", 67)], "ana", "s4") == (68, "new"))
+
+    dn = getattr(C, "duplicate_numbers", None)
+    check("0.9.0 N9: duplicate_numbers exists", callable(dn))
+    if callable(dn):
+        clash = [sg("ana", "s1", 8), sg("ana", "s2", 8), sg("bo", "t1", 8)]
+        check("0.9.0 N10: two sessions of one agent on one number are named; another agent's 8 is not a clash",
+              dn(clash) == {("ana", 8): ["s1", "s2"]}, dn(clash))
+        cont = [sg("ana", "s1", 8), sg("ana", "s2", 8, continues="s1"), sg("ana", "s1", 8)]
+        check("0.9.0 N11: a continuing session and a re-sign are not clashes", dn(cont) == {}, dn(cont))
+
+    # ---- the command: the number in the book row and in the receipt ----------------------
+    sdir = os.path.join(tmp, "n090")
+    os.makedirs(sdir, exist_ok=True)
+    book = os.path.join(tmp, "n090-book", "Log.strain")
+    os.makedirs(os.path.dirname(book), exist_ok=True)
+    env = {"STRAIN_STATE_DIR": sdir}
+
+    def sign(args):
+        return run("_strain_sign.py", None, list(args), env)
+
+    def rows_of(path):
+        with open(path) as f:
+            return [json.loads(l) for l in f if l.strip()]
+
+    o1, e1, r1 = sign(["--agent", "ana", "--session", "n-a", "--ledger", book])
+    o2, e2, r2 = sign(["--agent", "ana", "--session", "n-b", "--ledger", book])
+    o3, e3, r3 = sign(["--agent", "ana", "--session", "n-a", "--ledger", book])
+    check("0.9.0 N12: the receipt names the number -- first session S1, second S2, the first again S1",
+          r1 == r2 == r3 == 0 and "Owner: ana · S1 — signed" in o1 and "Owner: ana · S2 — signed" in o2
+          and "Owner: ana · S1 — signed" in o3, (o1, o2, o3, e1))
+    bk = [r for r in rows_of(book) if r.get("type") == "boot-sign"]
+    check("0.9.0 N13: each boot-sign row carries its number", [r.get("n") for r in bk] == [1, 2, 1], bk)
+
+    o4, e4, r4 = sign(["--agent", "ana", "--session", "n-c", "--ledger", book, "--continue", "n-b"])
+    last = rows_of(book)[-1]
+    check("0.9.0 N14: --continue books the continued number and names the session it continues",
+          r4 == 0 and "Owner: ana · S2 — signed" in o4 and last.get("n") == 2 and last.get("continues") == "n-b",
+          (o4, last))
+
+    oldbook = os.path.join(tmp, "n090-old", "Log.strain")
+    os.makedirs(os.path.dirname(oldbook), exist_ok=True)
+    with open(oldbook, "w") as f:
+        f.write(json.dumps(sg("eve", "o1")) + "\n" + json.dumps(sg("eve", "o2")) + "\n")
+    o5, e5, r5 = sign(["--agent", "eve", "--session", "n-e", "--ledger", oldbook])
+    check("0.9.0 N15: an unseeded old book signs without a number and says how to seed it (not on stdout)",
+          r5 == 0 and " · S" not in o5 and "--seed" in e5 and "--seed" not in o5, (o5, e5))
+    o6, e6, r6 = sign(["--agent", "eve", "--session", "n-f", "--ledger", oldbook, "--seed", "67"])
+    o7, e7, r7 = sign(["--agent", "eve", "--session", "n-g", "--ledger", oldbook])
+    check("0.9.0 N16: --seed sets the next number once; the next session follows it",
+          r6 == r7 == 0 and "Owner: eve · S67 — signed" in o6 and "Owner: eve · S68 — signed" in o7, (o6, o7, e6))
+    n_before = len(rows_of(oldbook))
+    o8, e8, r8 = sign(["--agent", "eve", "--session", "n-h", "--ledger", oldbook, "--seed", "10"])
+    check("0.9.0 N17: a seed at or below a number already given is refused, and nothing is booked",
+          r8 != 0 and len(rows_of(oldbook)) == n_before and "seed" in e8, (r8, e8))
+
+    # ---- found by the first real-data run: the number's "how" overwrote the session's -------
+    import re as _re
+    def via(err):   # the LAST details line -- the one printed after the book is signed
+        m = _re.findall(r"details: session \S+ \(via ([^)]*)\)", err)
+        return m[-1] if m else None
+    _, ev1, _ = sign(["--agent", "vic", "--session", "n-v"])                    # no book anywhere
+    _, ev2, _ = sign(["--agent", "wes", "--session", "n-w", "--ledger", book])  # a book, numbered
+    check("0.9.0 N21: the receipt still says where the session id came from, book or no book",
+          via(ev1) is not None and via(ev1) == via(ev2), (via(ev1), via(ev2)))
+
+    # ---- the lock, proven directly: the sign must read the book INSIDE the lock ------------
+    # (eight parallel signs rarely overlap in the read-to-append moment, so the race check
+    # below stays green even with no lock -- seen on a copy. This one cannot.)
+    import fcntl, time
+    lbook = os.path.join(tmp, "n090-lock", "Log.strain")
+    os.makedirs(os.path.dirname(lbook), exist_ok=True)
+    open(lbook, "a").close()
+    le = dict(CLEAN_ENV)
+    le.update(env)
+    le.setdefault("CODEX_HOME", os.path.join(tempfile.gettempdir(), "strain-selftest-no-codex"))
+    holder = open(lbook, "a+")
+    fcntl.flock(holder, fcntl.LOCK_EX)
+    p = subprocess.Popen([sys.executable, os.path.join(SCRIPTS, "_strain_sign.py"), "--agent", "zed",
+                          "--session", "lock-b", "--ledger", lbook],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=le)
+    time.sleep(1.0)
+    waited = rows_of(lbook) == []
+    holder.write(json.dumps(sg("zed", "lock-a", 1)) + "\n")   # another session took 1 while it waited
+    holder.flush()
+    fcntl.flock(holder, fcntl.LOCK_UN)
+    holder.close()
+    p.communicate()
+    got = [r.get("n") for r in rows_of(lbook) if r.get("session") == "lock-b"]
+    check("0.9.0 N20: the sign waits for the book's lock and reads the book inside it -- a number taken "
+          "while it waited is seen (lock-b gets 2, not 1)", waited and got == [2], (waited, got))
+
+    # ---- the S8 case: sessions signing at the same moment never share a number -----------
+    rbook = os.path.join(tmp, "n090-race", "Log.strain")
+    os.makedirs(os.path.dirname(rbook), exist_ok=True)
+    e = dict(CLEAN_ENV)
+    e.update(env)
+    e.setdefault("CODEX_HOME", os.path.join(tempfile.gettempdir(), "strain-selftest-no-codex"))
+    procs = [subprocess.Popen([sys.executable, os.path.join(SCRIPTS, "_strain_sign.py"), "--agent", "rae",
+                               "--session", "race-%d" % i, "--ledger", rbook],
+                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=e)
+             for i in range(8)]
+    for p in procs:
+        p.communicate()
+    nums = sorted(r.get("n") or 0 for r in rows_of(rbook) if r.get("type") == "boot-sign")
+    check("0.9.0 N18: eight sessions signing at once get eight different numbers, 1..8",
+          nums == list(range(1, 9)), nums)
+
+    with open(rbook, "a") as f:
+        f.write(json.dumps(sg("rae", "planted", 3)) + "\n")
+    o9, e9, r9 = sign(["--agent", "rae", "--session", "race-0", "--ledger", rbook])
+    check("0.9.0 N19: a book where two sessions share a number is named at the sign, in plain words",
+          r9 == 0 and "S3" in o9 and "share" in o9 and "/" not in o9.split("share", 1)[-1].split("\n")[0], o9)
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="strain-selftest-")
     try:
@@ -1809,6 +1956,7 @@ def main():
         section_082(tmp)
         section_083(tmp)
         section_084(tmp)
+        section_090(tmp)
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
