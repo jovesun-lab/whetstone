@@ -49,10 +49,11 @@ the handoff has nine sections found by name, and a skeleton every project can sh
 ![Logic flow — how Task Track and Handoff share one goal anchor](assets/logic-flow.svg)
 
 > A single, self-contained SVG — opens in any browser or Markdown viewer, nothing to install.
-> There's also an **[interactive rule map](assets/throughline-flow.html)** (open the HTML in a
-> browser: every rule as a card under the moment it first fires — hover a card for the discipline behind it). Both are drawn with
-> [Arcgram](https://arcgram.io) — the project Throughline's disciplines were lived on before
-> they were extracted here — the SVG via the engine's own export.
+> For the rules themselves there is an **[interactive rule map](assets/throughline-flow.html)** (open the HTML in a
+> browser): every rule in `rules/task-rules.json` as a card under the moment it first fires — hover a card for its why, its
+> pass condition and what checks it. The map is generated from the rule file, so it changes when the rules do; the picture
+> above is the idea, and stays. Both are drawn with [Arcgram](https://arcgram.io) — the project Throughline's disciplines were
+> lived on before they were extracted here.
 
 The thread runs: a session's ⭐️ MAIN is written into the handoff's ⭐️ Goal, picked up by the
 next session, re-derived against ground truth, and carried forward as the next ⭐️ MAIN — which
@@ -73,7 +74,7 @@ loops back to begin the cycle again.
 | `rules/task-rules.json` | Every rule as data — the one source the checker reads and the flow is drawn from. |
 | `tools/handoff.py` | Optional, zero-dependency helper: `new` (scaffold), `check` (validate against the rules), `brief`. |
 | `tools/test_handoff.py` | Its tests: `python3 tools/test_handoff.py`. |
-| `assets/logic-flow.svg` | The diagram above (SVG export of the Arcgram flow). |
+| `assets/logic-flow.svg` | The diagram above — how the two halves share one goal anchor (an Arcgram flow, exported as SVG). |
 | `assets/throughline-flow.html` | The rule map, interactive: every rule under the moment it first fires, drawn from the rule file (hover a card for its why, pass condition and what checks it). |
 
 ## Use it
