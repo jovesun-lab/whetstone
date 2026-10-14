@@ -2,6 +2,12 @@
 
 *Score an agent session by session; read the trend across versions.*
 
+## Since 0.1.1 — untagged
+
+- **A selftest** — `python3 session-measurement/tools/selftest.py` builds every example chart and the trend table in memory
+  (no files written, no cairosvg needed) and checks they are well-formed, draw every metric, escape text, carry no emoji, and that
+  the command line prints its usage. 24 checks.
+
 ## What's new in 0.1.1
 
 Alignment with its Whetstone siblings — the metric spine is untouched:
