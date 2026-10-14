@@ -56,6 +56,9 @@ explicit note → the agent's own notification text → a generic default.
 | `NOTIFY_ON_STOP` | also alert on turn-end — `on`/`off` | `off` |
 | `SERVER` | ntfy server base URL (change only if you self-host) | `https://ntfy.sh` |
 
+The file holds your token, so setup makes it readable by you only (`chmod 600`). A config made by an earlier version can be fixed
+the same way: `chmod 600 ~/.notify-me/config`.
+
 A starting template is in [`config.example`](config.example). Change anything later by saying
 "change the notify-me sound / token, turn the chime off", etc.
 

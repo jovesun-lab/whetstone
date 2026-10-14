@@ -115,5 +115,10 @@ check "no token: no request" still 5
 mkdir -p "$H/.notify-me"; printf 'TOKEN="t"\nSOUND="off"\nSERVER="http://127.0.0.1:1"\n' > "$H/.notify-me/config"
 check "server down: exits 0" run blocked "x"
 
+# 7 · the setup skill makes the config readable by its owner only — it holds the token, which is the password for the topic.
+#     The skill is text an agent follows, so the check reads the step itself.
+SKILL="$ROOT/skills/notify-me-setup/SKILL.md"
+check "setup skill: step 4 makes the config owner-only (chmod 600)" grep -qF 'chmod 600 "$HOME/.notify-me/config"' "$SKILL"
+
 [ "$fail" -eq 0 ] && echo "selftest: $n/$n checks passed" && exit 0
 echo "selftest FAILED"; exit 1

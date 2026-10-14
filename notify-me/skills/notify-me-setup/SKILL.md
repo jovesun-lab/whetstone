@@ -56,6 +56,12 @@ mkdir -p "$HOME/.notify-me"
 ```
 Write the five fields with the chosen values. Always append the inline comment `# this IS the ntfy "topic" you subscribe to on your phone` to the TOKEN line so the user can recognize it later. Set `NOTIFY_ON_STOP="off"` unless the user asks to also be pinged on every turn end.
 
+After writing the file, make it readable by this user only — it holds the token, which is the password for the user's ntfy topic:
+```
+chmod 600 "$HOME/.notify-me/config"
+```
+Tell the user in one plain sentence why: other accounts on this computer can no longer read their token. A config written by an earlier version is fixed the same way.
+
 ### Step 5 — phone app guidance
 Tell the user, in plain language, to finish the phone side:
 1. Install the **ntfy** app (iOS App Store / Android Play Store).

@@ -1,6 +1,16 @@
 # Changelog
 
-## Since 0.1.1 — untagged
+## 0.2.1 — 2026-10-14
+
+- **Your token stays yours** — setup now makes `~/.notify-me/config` readable by you only (`chmod 600`). The file holds the
+  token, and the token is the password for your ntfy topic; before, other accounts on the same computer could read it. If you
+  set notify-me up with an earlier version, run `chmod 600 ~/.notify-me/config` once (or ask your agent to). The selftest checks
+  that the setup step is there: 32 checks.
+- **Why 0.2.1 after 0.1.1** — a 0.2.0 build was shared outside the marketplace; this number stays above it, so an update never
+  looks like a downgrade.
+- Also in this release, from the untagged work below: the selftest and the attribution change.
+
+## Untagged work after 0.1.1, released in 0.2.1
 
 - **A selftest** — `bash notify-me/tools/selftest.sh` runs the plugin's scripts against a throwaway home folder and a capture
   server on 127.0.0.1: the push (topic, title, priority, body), the opt-in "finished" ping, the agent's note used once, the hook's
