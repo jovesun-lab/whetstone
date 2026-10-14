@@ -28,7 +28,7 @@ point-in-time snapshot, and trusting it blindly is exactly how drift creeps in.
    (🌶️ / 🍏 / 🍋). See `references/task-track.md`.
 
 4. **Propose, then execute on a one-word confirm.** End your orientation by proposing the
-   handoff's top Open / Next item as a concrete action — *"Highest priority is X — want me to
+   handoff's ⭐️ Goal (Next actions #1) as a concrete action — *"Highest priority is X — want me to
    start?"* — with the rest of the queue visible so the user can redirect. Don't end on an open
    "what would you like to work on?": that forces the user to ask what's highest and *then*
    confirm it — two turns where one would do. The proposal is a default, not a lock; any

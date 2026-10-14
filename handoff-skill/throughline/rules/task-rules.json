@@ -1,0 +1,333 @@
+{
+  "_what": "Throughline's rules as data: the single source that the handoff checker (tools/handoff.py), a project's own gates and the flow's build script all read. The prose in SKILL.md and references/ explains these rules; this file is what is checked.",
+  "_fields": {
+    "id": "stable id, RULE-<slug>",
+    "text": "the rule in one sentence",
+    "trigger": "when it applies: {event: [...]} or {always: true}",
+    "kind": "core (the task track itself) | step (a fixed point of the wrap or the boot) | hook | path-rule | identity",
+    "enforced_by": "[{file, state: built | planned | none}] - file null with state none means only the agent's own discipline holds it",
+    "pass_condition": "an observable fact that shows the rule was kept",
+    "why": "{ruling, incident, source[]} - the decision, what went wrong without it, where it is explained",
+    "owner": "who keeps the rule",
+    "status": "draft | active | retired",
+    "written_in": "[{file, anchor}] - where the prose states it; anchor null until that text is written",
+    "related": "ids of rules it overlaps"
+  },
+  "schema": "throughline-rules/1",
+  "version": "0.3.0",
+
+  "icons": {
+    "main": { "icon": "⭐️", "means": "the goal anchor; exactly one live at a time" },
+    "subtask": { "icon": "🔸", "means": "a subtask of the current MAIN (membership); stacks with an origin icon" },
+    "origin": {
+      "🌶️": "critical / high impact",
+      "🍏": "surfaced this session; in no plan or log yet",
+      "🍋": "logged before, and came back or was pulled in"
+    },
+    "kind": {
+      "optional": true,
+      "rule": "at most one per row, after the origin icon; chosen so its meaning is obvious without a legend",
+      "examples": { "🔍": "review", "🐛": "bug", "📋": "board row", "🤝": "a teammate's work", "🗂": "waits on the human's desk", "⏳": "in others' hands or dated", "📖": "read" }
+    },
+    "stacking": "membership first, then origin, then kind: 🔸🍋🐛 · a task serving no MAIN keeps its origin icon alone"
+  },
+
+  "handoff": {
+    "sections": [
+      { "name": "Machine fields", "block": 1, "role": "machine" },
+      { "name": "⭐️ Goal", "block": null, "role": "goal" },
+      { "name": "Where this session stopped", "block": 2, "role": "stopped" },
+      { "name": "Done", "block": null, "role": "done" },
+      { "name": "Next actions", "block": 3, "role": "next" },
+      { "name": "Waiting on others", "block": 4, "role": "waiting" },
+      { "name": "Project state", "block": 5, "role": "project" },
+      { "name": "Rulings not yet home", "block": 6, "role": "rulings" },
+      { "name": "Re-derive on pickup", "block": null, "role": "rederive" }
+    ],
+    "section_match": "a heading counts as a section when its text after any leading marker STARTS with the section name, or when it ENDS with the alias",
+    "alias": "· Throughline: ",
+    "main_entry": { "heading_level": 3, "word": "MAIN", "id_optional": true, "separator": "—", "shape": "### MAIN[ <id>]: <frozen title> — <verdict>" },
+    "verdicts": ["LANDED", "PARTIAL", "NOT-LANDED"],
+    "subtask_status": {
+      "done": { "needs": null, "means": "closed by a passing test" },
+      "carried": { "needs": "destination", "marker": "→", "means": "moved to a named row or file" },
+      "dropped": { "needs": "human_words", "means": "left out on the human's own words" }
+    },
+    "landed_requires": "every subtask done",
+    "human_words": { "label": "human:", "quoted": true, "quotes": ["\"", "「", "“"] },
+    "zero_main": { "token": "zero-MAIN", "needs": "human_words" },
+    "machine_verdict": { "line": "- verdict[ <id>]: <title> — <verdict>", "copy_of": "Done" },
+    "row_ref": {
+      "blocks": [3, 6],
+      "none_word": "none",
+      "id_pattern": "\\b[A-Z][A-Z0-9]*-\\d[\\w-]*",
+      "path_pattern": "[\\w.-]*/[\\w./-]*\\.\\w+",
+      "placement": "the item ends with ' · <row ID or path>'"
+    },
+    "goal_is_first_next_action": { "goal": "goal", "next": "next" }
+  },
+
+  "brief": {
+    "id_token_pattern": "(?<![\\w.-])(?:[A-Z]{1,6}[-.]?\\d[\\w.-]*|#\\d+)(?![\\w-])",
+    "min_words": 3,
+    "words": "letters-only words on the same line, the ID tokens not counted",
+    "level": "WARN"
+  },
+
+  "module_schema": {
+    "_what": "the shape of a project module (the project's own wrap or boot steps); the runner that executes modules comes in 0.4",
+    "fields": {
+      "id": "the module's id",
+      "trigger": "when it runs: {always: true} or {event: [...]} (e.g. engine changed, a protected file moved)",
+      "depends_on": "ids of modules that must run first",
+      "pass": "the pass criteria, fixed in the module, not chosen at run time",
+      "skipped_when": "a condition under which the module is not needed; a module skipped as not needed satisfies its dependents"
+    },
+    "breaker": 3,
+    "today_keyed_on": "the session number, not the calendar date",
+    "machine_times": "UTC"
+  },
+
+  "rules": [
+    {
+      "id": "RULE-one-main",
+      "text": "Exactly one ⭐️ MAIN is live at a time; more than one MAIN in a session is normal, each confirmed by the human.",
+      "trigger": { "always": true },
+      "kind": "core",
+      "enforced_by": [{ "file": "tools/handoff.py", "state": "built" }],
+      "pass_condition": "the handoff holds exactly one line that starts with ⭐️, [MAIN] or main_goal: true",
+      "why": { "ruling": "maintainers, 2026-09-29: several MAINs per session are normal, one ⭐️ live at a time", "incident": "a task list with two anchors gives the agent no single thing to check itself against", "source": ["references/task-track.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "references/task-track.md", "anchor": "One ⭐️ MAIN at a time" }],
+      "related": ["RULE-main-trigger"]
+    },
+    {
+      "id": "RULE-main-trigger",
+      "text": "The MAIN is written at an observable moment: the first action that is not answering a question; with no MAIN then, stop, propose one and ask the human to confirm.",
+      "trigger": { "event": ["the first file write", "the first multi-step tool work"] },
+      "kind": "core",
+      "enforced_by": [{ "file": "tools/handoff.py", "state": "planned" }],
+      "pass_condition": "a handoff whose Done lists work also lists a MAIN or a zero-MAIN declaration",
+      "why": { "ruling": "maintainers, 2026-09-29: key the anchor on an event the agent can see, not on 'once the goal is clear'", "incident": "an agent's proposed MAIN was answered with a question, not a confirm; it then ran about 130 tool calls with no MAIN and no task list", "source": ["references/task-track.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "references/task-track.md", "anchor": "the first action that is not answering a question" }],
+      "related": ["RULE-zero-main", "RULE-one-main"]
+    },
+    {
+      "id": "RULE-frozen-title",
+      "text": "A MAIN's title is frozen when the human confirms it; the verdict is given under that title, and a redirect is a new MAIN, not a rename.",
+      "trigger": { "event": ["the human confirms a MAIN", "the wrap"] },
+      "kind": "core",
+      "enforced_by": [{ "file": null, "state": "none" }],
+      "pass_condition": "each MAIN in Done carries the title it was confirmed under",
+      "why": { "ruling": "Throughline 0.1: the title is frozen at confirm time", "incident": "a goal quietly renamed into whatever happened makes 'done' unfalsifiable", "source": ["references/task-track.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "references/task-track.md", "anchor": "the title is frozen at confirm" }],
+      "related": ["RULE-verdict-one-home"]
+    },
+    {
+      "id": "RULE-subtasks",
+      "text": "Once a MAIN is confirmed it is broken into 🔸 subtasks, worked one by one; every MAIN in Done lists at least one.",
+      "trigger": { "event": ["the human confirms a MAIN", "the wrap"] },
+      "kind": "core",
+      "enforced_by": [{ "file": "tools/handoff.py", "state": "planned" }],
+      "pass_condition": "every '### MAIN' entry in Done is followed by at least one '- 🔸' line",
+      "why": { "ruling": "maintainers, 2026-09-29: 🔸 marks a subtask of the MAIN", "incident": "a MAIN with no parts cannot show which part is still open", "source": ["references/task-track.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "references/task-track.md", "anchor": "broken into 🔸 subtasks" }],
+      "related": ["RULE-landed-requires-every-subtask-done"]
+    },
+    {
+      "id": "RULE-landed-requires-every-subtask-done",
+      "text": "A MAIN is LANDED only when every one of its subtasks is done.",
+      "trigger": { "event": ["the wrap"] },
+      "kind": "core",
+      "enforced_by": [{ "file": "tools/handoff.py", "state": "planned" }],
+      "pass_condition": "no LANDED MAIN in Done has a subtask that is carried, dropped or without a status",
+      "why": { "ruling": "maintainers, 2026-09-29: a MAIN is complete only when every subtask is done", "incident": "MAINs closed as done while a part was still open; the open part was lost with the next session", "source": ["templates/handoff.template.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "templates/handoff.template.md", "anchor": "LANDED needs every subtask done" }],
+      "related": ["RULE-subtask-leaves-three-ways"]
+    },
+    {
+      "id": "RULE-subtask-leaves-three-ways",
+      "text": "A subtask leaves the list in one of three ways only: done (closed by a passing test), carried to a named row or file, or dropped on the human's own words.",
+      "trigger": { "event": ["a subtask leaves the list", "the wrap"] },
+      "kind": "core",
+      "enforced_by": [{ "file": "tools/handoff.py", "state": "planned" }],
+      "pass_condition": "every '- 🔸' line in Done ends in done, in carried → <row ID or path>, or in dropped · human: \"<words>\"",
+      "why": { "ruling": "maintainers, 2026-10-07: a red is closed by a passing test, not dropped", "incident": "a deliverable narrowed to its open checks, one check was closed, and the item fell out of the queue with none of the three - it was found weeks later", "source": ["references/task-track.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "references/task-track.md", "anchor": "leaves the list three ways only" }],
+      "related": ["RULE-landed-requires-every-subtask-done", "RULE-task-row"]
+    },
+    {
+      "id": "RULE-zero-main",
+      "text": "A session that changes no file may run with no MAIN, and only on the human's own words, recorded in Done as zero-MAIN.",
+      "trigger": { "event": ["the wrap"] },
+      "kind": "core",
+      "enforced_by": [{ "file": "tools/handoff.py", "state": "planned" }],
+      "pass_condition": "a handoff with no MAIN entry carries 'zero-MAIN · human: \"<words>\"' in Done",
+      "why": { "ruling": "maintainers, 2026-09-29: any session that changes a file belongs to a MAIN; only a pure question-and-answer session may run without one, on the human's words", "incident": "work done outside any MAIN has no verdict and no owner at the next start", "source": ["templates/handoff.template.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "templates/handoff.template.md", "anchor": "zero-MAIN · human:" }],
+      "related": ["RULE-main-trigger"]
+    },
+    {
+      "id": "RULE-icons-stack",
+      "text": "Icons stack in a fixed order: 🔸 membership, then the origin icon (🌶️ 🍏 🍋), then an optional kind icon whose meaning is obvious at a glance.",
+      "trigger": { "always": true },
+      "kind": "core",
+      "enforced_by": [{ "file": null, "state": "none" }],
+      "pass_condition": "a task row reads membership, origin, kind in that order, e.g. 🔸🍋🐛",
+      "why": { "ruling": "maintainers, 2026-09-29: 🔸 says which MAIN, 🌶️/🍏/🍋 say where it came from; 2026-10-13: a kind icon is kept because the human reads it at a glance", "incident": "🌶️ was defined as 'in service of the MAIN', mixing origin with membership", "source": ["references/task-track.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "references/task-track.md", "anchor": "membership, then origin, then kind" }],
+      "related": []
+    },
+    {
+      "id": "RULE-task-surface",
+      "text": "The task list lives where the human sees it - the host's task tool and plan pane, or else the board or file the human watches - and the MAIN reaches it at the confirm instant, not at the wrap.",
+      "trigger": { "event": ["the human confirms a MAIN"] },
+      "kind": "core",
+      "enforced_by": [{ "file": null, "state": "none" }],
+      "pass_condition": "the MAIN is visible in the human's task surface within the turn it was confirmed",
+      "why": { "ruling": "maintainers, 2026-10-07: with no task UI, the board is the task surface", "incident": "the human asked whether the MAIN was on the board; it was not until a later step", "source": ["skills/throughline/SKILL.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "skills/throughline/SKILL.md", "anchor": "A task-list tool" }],
+      "related": ["RULE-task-row"]
+    },
+    {
+      "id": "RULE-task-row",
+      "text": "Every next action and every ruling not yet in its home file has its own durable row (a board row or a plan file); the handoff only points at it.",
+      "trigger": { "event": ["the wrap"] },
+      "kind": "core",
+      "enforced_by": [{ "file": "tools/handoff.py", "state": "planned" }],
+      "pass_condition": "every item in Next actions and in Rulings not yet home ends with a row ID or a file path, or the block says none",
+      "why": { "ruling": "maintainers, 2026-10-07: six blocks and one rule - every block-3 and block-6 item has a durable row", "incident": "work that lived only in a newest-only 'next' list was lost twice when a session pivot overwrote the list", "source": ["references/handoff.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "references/handoff.md", "anchor": "the handoff only points at it" }],
+      "related": ["RULE-handoff-blocks"]
+    },
+    {
+      "id": "RULE-pass-condition-before-run",
+      "text": "The pass condition of a check is written before the check runs, and the row is verified only by that check.",
+      "trigger": { "event": ["before running a check"] },
+      "kind": "core",
+      "enforced_by": [{ "file": null, "state": "none" }],
+      "pass_condition": "the two-box row names its check and its expected result before the run",
+      "why": { "ruling": "maintainers, 2026-10-07: changes are closed only after a test passes; the condition comes first", "incident": "a condition chosen after the run fits whatever the run printed", "source": ["references/task-track.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "references/task-track.md", "anchor": "the pass condition is written before the check runs" }],
+      "related": []
+    },
+    {
+      "id": "RULE-handoff-blocks",
+      "text": "A handoff carries six blocks - machine fields, where this session stopped, next actions, waiting on others, project state, rulings not yet home - plus the Goal, Done and Re-derive on pickup.",
+      "trigger": { "event": ["the wrap"] },
+      "kind": "step",
+      "enforced_by": [{ "file": "tools/handoff.py", "state": "planned" }],
+      "pass_condition": "handoff.py check finds every section of handoff.sections",
+      "why": { "ruling": "maintainers, 2026-10-07: the handoff skeleton is six blocks and one rule", "incident": "of one measured handoff, only the state sections were read by scripts; the rest was rules and history loaded at every start", "source": ["templates/handoff.template.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "templates/handoff.template.md", "anchor": "sections a handoff must have are listed in rules/task-rules.json" }],
+      "related": ["RULE-task-row", "RULE-section-by-name"]
+    },
+    {
+      "id": "RULE-goal-is-first-next-action",
+      "text": "The ⭐️ Goal of a handoff is a proposal the human confirms at the next start, and it is the first Next action, not a second list.",
+      "trigger": { "event": ["the wrap"] },
+      "kind": "core",
+      "enforced_by": [{ "file": "tools/handoff.py", "state": "planned" }],
+      "pass_condition": "the Goal text equals the first Next action's text",
+      "why": { "ruling": "maintainers, 2026-10-12: the Goal is Next actions #1", "incident": "a plan copied forward word for word as if decided, though the human had not confirmed it", "source": ["templates/handoff.template.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "templates/handoff.template.md", "anchor": "must equal the first item of Next actions" }],
+      "related": ["RULE-frozen-title"]
+    },
+    {
+      "id": "RULE-verdict-one-home",
+      "text": "Each MAIN's verdict has one home, Done; Machine fields carries a generated copy that must agree.",
+      "trigger": { "event": ["the wrap"] },
+      "kind": "core",
+      "enforced_by": [{ "file": "tools/handoff.py", "state": "planned" }],
+      "pass_condition": "every '- verdict' line in Machine fields matches its MAIN in Done",
+      "why": { "ruling": "maintainers, 2026-10-12: Done is the home; Machine fields a generated copy", "incident": "two homes for one fact drift apart", "source": ["templates/handoff.template.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "templates/handoff.template.md", "anchor": "a generated copy of Done" }],
+      "related": ["RULE-frozen-title"]
+    },
+    {
+      "id": "RULE-section-by-name",
+      "text": "A section is found by its name - the heading text after any marker starts with it - or by the alias '· Throughline: <name>' at the end of a project's own heading.",
+      "trigger": { "always": true },
+      "kind": "core",
+      "enforced_by": [{ "file": "tools/handoff.py", "state": "planned" }],
+      "pass_condition": "a heading that merely contains the name inside another word does not count",
+      "why": { "ruling": "maintainers, 2026-09-29: match the name, not a word inside another heading; annotate a project heading, don't rename it", "incident": "a substring match let 'State' be satisfied by an engine-state heading and 'Open / Next' by a list of open questions - the opposite of a next-steps list", "source": ["references/handoff.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "references/handoff.md", "anchor": "· Throughline: <name>" }],
+      "related": ["RULE-handoff-blocks"]
+    },
+    {
+      "id": "RULE-wrap-skeleton",
+      "text": "The wrap runs seven steps in order: ask before wrapping; a verdict per MAIN; close the task list and its rows with the verdicts; write the session log (one file plus an index line); rewrite the handoff; run the checks; name the session, then the final report.",
+      "trigger": { "event": ["the wrap"] },
+      "kind": "step",
+      "enforced_by": [{ "file": null, "state": "none" }],
+      "pass_condition": "the wrap's transcript shows the seven steps in order",
+      "why": { "ruling": "maintainers, 2026-10-07: the handoff half is a skeleton every project shares plus project modules", "incident": "five measured wraps ran the same steps in different orders and skipped different ones", "source": ["references/handoff.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "references/handoff.md", "anchor": "The wrap runs seven steps" }],
+      "related": ["RULE-module-schema"]
+    },
+    {
+      "id": "RULE-boot-skeleton",
+      "text": "At the start, copy the next-actions list verbatim before any work (the queue freeze) and write the session-start brief to disk beside it.",
+      "trigger": { "event": ["the session start"] },
+      "kind": "step",
+      "enforced_by": [{ "file": null, "state": "none" }],
+      "pass_condition": "a frozen queue file and a brief file exist for the session",
+      "why": { "ruling": "maintainers, 2026-10-07: the queue freeze is skeleton, not project; the start brief becomes a file", "incident": "a brief that is not a file cannot be checked; an item fell out of a queue nobody had frozen", "source": ["references/handoff.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "references/handoff.md", "anchor": "write the session-start brief to disk" }],
+      "related": ["RULE-brief-ids-carry-words"]
+    },
+    {
+      "id": "RULE-brief-ids-carry-words",
+      "text": "An ID never stands alone: in the session-start brief, every ID-like token carries words saying what it is.",
+      "trigger": { "event": ["the next session start reads the previous brief"] },
+      "kind": "core",
+      "enforced_by": [{ "file": "tools/handoff.py", "state": "planned" }],
+      "pass_condition": "handoff.py brief prints no WARN for the brief",
+      "why": { "ruling": "maintainers, 2026-09-29: a short code travels with its owner's name on first use", "incident": "a handoff carried 'D.5 two questions' for three weeks with nothing saying what D.5 was", "source": ["references/handoff.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "references/handoff.md", "anchor": "An ID never stands alone" }],
+      "related": ["RULE-boot-skeleton"]
+    },
+    {
+      "id": "RULE-module-schema",
+      "text": "A project's own wrap or boot steps are modules in one schema: a trigger, dependencies, pass criteria fixed in the module, a not-needed condition that satisfies dependents, a breaker of 3.",
+      "trigger": { "event": ["the wrap", "the session start"] },
+      "kind": "step",
+      "enforced_by": [{ "file": null, "state": "planned" }],
+      "pass_condition": "each project module validates against module_schema",
+      "why": { "ruling": "maintainers, 2026-10-07: the circuit breaker is 3; 'today' keys on the session number", "incident": "a project step written nowhere was found only by a red check, twice", "source": ["references/handoff.md"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "references/handoff.md", "anchor": "a project's own steps are modules" }],
+      "related": ["RULE-wrap-skeleton"]
+    },
+    {
+      "id": "RULE-secrets-sweep",
+      "text": "A handoff is shareable: no keys, tokens, passwords or personal data; the checker warns on obvious patterns, and real redaction is the writer's.",
+      "trigger": { "event": ["the wrap"] },
+      "kind": "core",
+      "enforced_by": [{ "file": "tools/handoff.py", "state": "built" }],
+      "pass_condition": "handoff.py check prints no 'possible leaked secret' warning",
+      "why": { "ruling": "Throughline 0.1: a heuristic backstop, never a pass", "incident": "a regex can never catch every secret, so a hit is a warning and the human reviews", "source": ["tools/handoff.py"] },
+      "owner": "throughline", "status": "active",
+      "written_in": [{ "file": "templates/handoff.template.md", "anchor": "Secrets check" }],
+      "related": []
+    }
+  ]
+}

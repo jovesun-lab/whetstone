@@ -1,6 +1,29 @@
-# Throughline v0.2.1
+# Throughline v0.3.0
 
 *Keep the thread — within a session, and across them.*
+
+## What's new in 0.3.0
+
+The rules become data, and the handoff gets one shape every project can share.
+
+- **One rule file, three readers.** `rules/task-rules.json` holds every rule as a record — its text, the moment it fires, why it
+  exists, the condition it passes on, what checks it and where it is written. The handoff checker reads it, a project's own gates
+  can read it, and the flow is drawn from it.
+- **The handoff: nine sections, found by name.** Machine fields · ⭐️ Goal · Where this session stopped · Done · Next actions ·
+  Waiting on others · Project state · Rulings not yet home · Re-derive on pickup. A section is found by its heading's name, not its
+  position; the ⭐️ Goal is a proposal and must equal the first Next action; each MAIN's verdict has one home, Done.
+- **The skeleton every project shares** (`references/handoff.md`): the wrap's seven steps in order, the start that copies the
+  next actions verbatim and writes the session-start brief to disk, a project's own steps as modules, and rules that leave the
+  handoff by kind.
+- **Task-track rules sharpened:** a MAIN may carry an optional id (`### MAIN S12-1: …`); its title freezes when the human confirms
+  it; LANDED needs every subtask done; a subtask leaves the list three ways only; 🌶️ says impact, not membership; the task list
+  lives where the human sees it, and every next action or open ruling points at a row.
+- **`tools/handoff.py`** — `new` (a blank scaffold), `check` (a finished handoff against the rule file) and `brief` (warns on IDs
+  in a session-start brief that carry no words). 22 tests, `python3 tools/test_handoff.py`.
+- **The interactive flow is now a rule map:** `assets/throughline-flow.html` draws every rule under the moment it first fires,
+  generated from the rule file; a test goes red if the rule file changes and the map is not redrawn.
+- **Breaking:** a 0.2.1 handoff fails the new check — the Done grammar changed too, so old headings are not kept as aliases. Start
+  the next one from `python3 tools/handoff.py new`.
 
 ## What's new in 0.2.1
 

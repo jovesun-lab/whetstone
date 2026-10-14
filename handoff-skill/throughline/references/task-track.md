@@ -26,9 +26,12 @@ with a leading emoji that records *where it came from*:
 | Tag | Meaning | Why it's tagged this way |
 |---|---|---|
 | **⭐️ MAIN** | The session's primary task / goal anchor. **Exactly one.** | This is the thing every other task is supposed to serve. Re-read it before load-bearing steps. |
-| **🌶️ Critical** | A critical / high-impact task in service of the MAIN. | Distinguishes "must do, big blast radius" from ordinary subtasks. |
+| **🌶️ Critical** | A critical / high-impact task — its origin is its impact. Whether it serves a MAIN is 🔸's job, not 🌶️'s. | Distinguishes "must do, big blast radius" from ordinary work, without claiming membership. |
 | **🍏 Temp this session** | Surfaced mid-session; not in any plan or log. A transient. | These are the drift carriers. Tagging them makes the transients countable at a glance. |
 | **🍋 Logged + recurred / pulled-in** | A logged task that came back, OR a logged-but-unplanned task worth doing now. | Separates "we knew about this" from "this is brand new," so recurring problems are visible. |
+| **🔸 Subtask** | A part of the current MAIN: once the MAIN is confirmed it is broken into 🔸 subtasks, worked one by one. | Membership lives here, so the origin icons only say where a task came from. |
+
+**Stacking order — membership, then origin, then kind.** 🔸 says which MAIN a task serves; 🌶️ / 🍏 / 🍋 say where it came from; a row may also carry one optional *kind* icon — 🔍 review · 🐛 bug · 📋 board row · 🤝 a teammate's work · 🗂 waits on the human · ⏳ in others' hands · 📖 read — chosen so its meaning is obvious without a legend: `🔸🍋🐛`. A task serving no MAIN keeps its origin icon (and kind icon) alone. The exact set lives in `rules/task-rules.json` (`icons`).
 
 Put the emoji **in the task title**, not only in a hidden field — and treat "which field does
 this UI actually render?" as a real question, not a given: the title is the *default* display
@@ -59,9 +62,12 @@ trustworthy — the first two against parsers, the third against the rendering s
 
 ## How to run it
 
-- **At session start, once the goal is clear, write the ⭐️ MAIN.** This is the anchor. Phrase it
-  so you can literally re-read it and self-check: *"Am I still solving this, or something it slid
-  into?"*
+- **Write the ⭐️ MAIN at an event you can see: the first action that is not answering a question**
+  — the first file write, the first multi-step tool work. If no MAIN exists at that moment, stop:
+  write the task list with a proposed MAIN and ask the human to confirm before going on. A session
+  that only answers questions may run with none, and then only on the human's own words (a
+  zero-MAIN, recorded in the handoff). Phrase the MAIN so you can literally re-read it and
+  self-check: *"Am I still solving this, or something it slid into?"*
 - **The MAIN's title freezes the moment it's confirmed — and it's closed under that same name.**
   The task list is a label you control, which is exactly why it can lie: rename the MAIN to
   whatever actually happened and "done" becomes unfalsifiable. So the title is frozen at confirm
@@ -71,6 +77,9 @@ trustworthy — the first two against parsers, the third against the rendering s
   keeps its frozen title and takes an honest not-landed close; the new direction becomes its own
   new MAIN entry. The trail of appended entries *is* the record that every shift was agreed, not
   silent drift.
+- **Work the MAIN through its 🔸 subtasks.** The MAIN is LANDED only when every subtask is done. A
+  subtask leaves the list three ways only: **done** (its test passed), **carried** to a named row or
+  file, or **dropped** on the human's own words — never by quietly falling out of the queue.
 - **One ⭐️ MAIN at a time.** If a second candidate for MAIN appears, that's a decision, not a
   default — surface it to the human rather than quietly running two main lines.
 - **One boot = one session,** no matter how many wrap-ups happen inside it. If the work wraps and
@@ -105,6 +114,8 @@ When a task breaks into checklist rows, give every row **two boxes, not one**:
 - `verified` ticks **only after the named check actually ran** — never from memory. Write what
   ran (and when) into the row, so a later reader — or a different agent auditing the work — can
   re-run it verbatim.
+- The pass condition is written before the check runs: the row names its check *and the expected
+  result* before the run, so a result cannot be fitted afterwards.
 - A row that turns out wrong is **struck through with a dated reason**, never deleted.
 - A discovered gap gets its **own new row** — visible, not silently absorbed into an old one.
 

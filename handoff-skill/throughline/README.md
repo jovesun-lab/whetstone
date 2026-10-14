@@ -20,6 +20,9 @@ It packages two linked habits:
 holds it *within* a run; the handoff's **⭐️ Goal** carries it *across* runs. One sentence:
 **don't lose the thread — within a session, or between them.**
 
+**New in 0.3.0** — the rules live in one data file (`rules/task-rules.json`) that the checker reads and the flow is drawn from;
+the handoff has nine sections found by name, and a skeleton every project can share. See the CHANGELOG.
+
 **New in 0.2.0** — disciplines extracted from another year of daily use:
 
 - **Frozen titles & verdicts.** A goal's title freezes when it's confirmed, and it closes under
@@ -46,8 +49,8 @@ holds it *within* a run; the handoff's **⭐️ Goal** carries it *across* runs.
 ![Logic flow — how Task Track and Handoff share one goal anchor](assets/logic-flow.svg)
 
 > A single, self-contained SVG — opens in any browser or Markdown viewer, nothing to install.
-> There's also an **[interactive version](assets/throughline-flow.html)** (open the HTML in a
-> browser: hover any node for the full discipline behind it). Both are drawn with
+> There's also an **[interactive rule map](assets/throughline-flow.html)** (open the HTML in a
+> browser: every rule as a card under the moment it first fires — hover a card for the discipline behind it). Both are drawn with
 > [Arcgram](https://arcgram.io) — the project Throughline's disciplines were lived on before
 > they were extracted here — the SVG via the engine's own export.
 
@@ -67,9 +70,11 @@ loops back to begin the cycle again.
 | `references/task-track.md` | The within-session discipline, in depth. |
 | `references/handoff.md` | The across-session protocol (the seven anti-drift mechanisms + the multi-agent rules), in depth. |
 | `examples/example-handoff.md` | A filled-in handoff to copy the shape from. |
-| `tools/handoff.py` | Optional, zero-dependency helper (scaffold + validate). |
+| `rules/task-rules.json` | Every rule as data — the one source the checker reads and the flow is drawn from. |
+| `tools/handoff.py` | Optional, zero-dependency helper: `new` (scaffold), `check` (validate against the rules), `brief`. |
+| `tools/test_handoff.py` | Its tests: `python3 tools/test_handoff.py`. |
 | `assets/logic-flow.svg` | The diagram above (SVG export of the Arcgram flow). |
-| `assets/throughline-flow.html` | The same diagram, interactive (Arcgram flow — hover nodes for the full disciplines). |
+| `assets/throughline-flow.html` | The rule map, interactive: every rule under the moment it first fires, drawn from the rule file (hover a card for its why, pass condition and what checks it). |
 
 ## Use it
 

@@ -50,9 +50,10 @@ task carries a leading emoji marking *where it came from*, so drift reads at a g
 | Tag | Meaning |
 |---|---|
 | **⭐️ MAIN** | The session's primary task / goal anchor. **Exactly one at a time.** Re-read it before any load-bearing step: *"am I still solving the MAIN, or something it slid into?"* |
-| **🌶️ Critical** | A critical bug or big-impact task in service of the MAIN. |
+| **🌶️ Critical** | A critical bug or big-impact task — an origin by impact; whether it serves the MAIN is marked by 🔸. |
 | **🍏 Temp this session** | Surfaced mid-session, not in any plan. A transient. If it balloons past the MAIN's scope → **stop and re-confirm** with the human, don't let it silently become the main line. |
 | **🍋 Logged + recurred / pulled-in** | A previously-logged task that came back, OR a logged task not planned for this session but worth doing now. |
+| **🔸 Subtask** | A part of the current MAIN, worked one by one; the MAIN is LANDED only when every 🔸 is done. Icons stack: membership, origin, then an optional kind icon (🔍 🐛 📋 🤝 🗂 ⏳ 📖) — `🔸🍋🐛`. |
 
 Put the emoji **in the task's title** — and make sure the title is **the channel your task UI
 actually renders**. Some UIs carry a second display field that supersedes the title while a task
@@ -96,20 +97,24 @@ can read plain markdown.
 
 **Writing a handoff** (the `handoff` operation — see `commands/handoff.md`):
 
-1. **Fill the shared template** `templates/handoff.template.md`. It is the single source of truth
-   for a handoff's structure; do not invent your own sections. The core sections:
-   - **Header** — which session wrote this (session name + id): every claim traces back.
-   - **⭐️ Goal** — the one thing the next session is for (carry the MAIN forward, frozen title).
-   - **State** — where things stand now; mark anything unverified.
-   - **Done** — what got completed (briefly), each goal closed with an explicit verdict —
-     `LANDED` (with evidence) / `PARTIAL` / `NOT-LANDED` (with where it's carried). Silence is
-     not a verdict.
-   - **Decisions** — what the human confirmed, numbered, append-only ("none" if none).
-   - **Open / Next** — open threads + recommended next move, in priority order.
+1. **Fill the shared template** `templates/handoff.template.md` (at the plugin root, beside `skills/`). It is the single source of truth
+   for a handoff's structure, and the same sections as `rules/task-rules.json`; do not invent your own
+   (a project with its own heading names adds `· Throughline: <name>` at the end instead). The sections:
+   - **Machine fields** — session id and number, agent, model, host, times in UTC, a verdict line per MAIN
+     (a copy of Done), a file-hash table.
+   - **⭐️ Goal** — the next session's MAIN, a *proposal* the human confirms at the next start; the
+     same text as Next actions #1.
+   - **Where this session stopped** — a short summary; mark anything unverified.
+   - **Done** — each MAIN under its frozen title with an explicit verdict (`LANDED` with evidence /
+     `PARTIAL` / `NOT-LANDED`) and its 🔸 subtasks — done, carried → a row, or dropped on the human's
+     words. LANDED needs every subtask done. Silence is not a verdict.
+   - **Next actions** — ranked, one line each, each pointing at its durable row.
+   - **Waiting on others** — what the human and other agents owe.
+   - **Project state** — the project's own facts (versions, hashes, last check); "none" allowed.
+   - **Rulings not yet home** — this session's decisions in full until each reaches its home file, each
+     with its row; "none" if none.
    - **Re-derive on pickup** — what the next agent must reconcile against ground truth before
      trusting this doc: each check named, with its expected result.
-   - **Suggested next steps / tools / skills** — concrete next actions and capabilities to reach for.
-   - **References** — point to plans, specs, issues, commits, diffs, docs by path/URL.
 2. **Reference, don't duplicate.** If a fact already lives in a plan, issue, commit, or diff,
    link it — don't copy it. Copies go stale; references stay single-source.
 3. **Redact secrets.** No API keys, tokens, passwords, or personal data. Sweep before saving.
@@ -132,7 +137,7 @@ can read plain markdown.
    named artifacts, re-run the named check, re-confirm cited facts are still current. A snapshot
    trusted blindly is exactly how stale state causes drift.
 3. Set up Task Track with the carried-forward ⭐️ MAIN (frozen title), then **end your
-   orientation by proposing the top Open / Next item as a concrete action for a one-word
+   orientation by proposing the ⭐️ Goal (Next actions #1) as a concrete action for a one-word
    confirm** — queue visible, no open-ended "what should we work on?". The proposal is a
    default, not a lock.
 
@@ -166,6 +171,7 @@ has a graceful fallback:
 | File-system write | saving the handoff to a known path | emit the handoff **inline** in your reply — the doc is the deliverable, not the file |
 | Live access (web, repo, tools) | re-deriving state against ground truth | re-derive from the **artifacts you were handed**; flag what you couldn't verify |
 | Code execution | the optional `tools/handoff.py` validator | skip it — the prompt does the whole job without it |
+| A task-list tool | the ⭐️ MAIN and its 🔸 subtasks live where the human sees them (the host's task list and plan pane), from the confirm instant | the board or file the human watches, written at the confirm instant — not at the wrap |
 | A skill / slash-command system | invoking `handoff` / `resume` as commands | paste the relevant section in as a plain prompt |
 
 The two reasoning disciplines — the **⭐️ MAIN goal anchor** and **re-derive-don't-trust** — have
@@ -193,7 +199,8 @@ without it.
 | `SKILL.md` | This file — the two habits and how they connect. |
 | `commands/handoff.md` | The write operation (drop-in slash command + paste-in prompt). |
 | `commands/resume.md` | The read / pick-up operation. |
-| `templates/handoff.template.md` | Single source of truth for handoff structure. |
+| `templates/handoff.template.md` | The handoff's sections (plugin root); the same sections as `rules/task-rules.json`. |
+| `rules/task-rules.json` | The rules as data — what `tools/handoff.py` checks and the prose explains. |
 | `references/task-track.md` | The within-session discipline, in depth. |
 | `references/handoff.md` | The across-session protocol (the seven anti-drift mechanisms + the multi-agent rules), in depth. |
 | `examples/example-handoff.md` | A filled-in handoff to copy the shape from. |

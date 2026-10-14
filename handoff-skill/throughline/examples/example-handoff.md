@@ -1,57 +1,57 @@
 # Handoff — add rate-limiting to the public API
 
-_Written 2025-03-14 16:20 · by session `rate-limit-mvp 14-03-25` · for: finishing and shipping the rate-limiter behind a flag_
+## Machine fields
+
+- session: 7f3a-example · 14 · agent: an agent · model: any · host: any
+- started 2025-03-14T13:05Z · ended 2025-03-14T16:20Z
+- verdict: Ship per-API-key rate limiting on the public REST API — PARTIAL
+
+| file | md5 |
+|---|---|
+| `ratelimit/middleware.py` | 3c9e1f0a7b21 |
+| `api/app.py` | 8d02aa41c6e5 |
 
 ## ⭐️ Goal
 
-Ship per-API-key rate limiting on the public REST API, default 100 req/min, behind the
-`rate_limit_enabled` flag (off in prod until load-tested). This is the one thing to finish.
+Test the rate limiter's Redis-down path
 
-## State
+## Where this session stopped
 
-- Middleware `ratelimit/middleware.py` written and unit-tested (token-bucket, Redis-backed).
-- Wired into the app in `api/app.py` behind `rate_limit_enabled` — currently **off** everywhere.
-- Redis connection reuses the existing cache pool; no new infra.
-- **Unverified:** behaviour under Redis outage — there's a TODO to fail *open*, not yet tested.
+The token-bucket middleware is built and unit-tested and wired in behind `rate_limit_enabled`, which is
+**off** everywhere. Not verified yet: behaviour when Redis is down (it must fail open).
 
 ## Done
 
-- **Goal verdict — "Ship per-API-key rate limiting …": PARTIAL.** Middleware built and
-  unit-tested (evidence: `make test ratelimit`, 14/14 green locally); *shipping* has not
-  happened — the flag is still off everywhere and the PR is unreviewed. Carried in Open / Next.
-- Token-bucket implementation + 14 unit tests (all green locally).
-- Config flag plumbed through `settings.py` and the Helm values file.
-- Draft PR opened (see References) — not reviewed.
+### MAIN: Ship per-API-key rate limiting on the public REST API — PARTIAL
+Evidence: `make test ratelimit`, 14/14 green locally; the flag is still off and the PR unreviewed, so not shipped.
+- 🔸 token-bucket middleware with unit tests · done
+- 🔸 config flag through settings and the Helm values · done
+- 🔸 Redis-down path fails open · carried → ROW-0314-01
+- 🔸 load test at 2× peak · carried → ROW-0314-02
+- 🔸 platform-team review of the PR · carried → ROW-0314-04
 
-## Decisions
+## Next actions
 
-- D1. Default limit is **100 req/min per API key** (confirmed 03-12).
-- D2. On Redis outage the limiter **fails open** — availability over enforcement (confirmed 03-13).
-- D3. Rollout is flag-gated: staging first, prod only after the 2× load test (confirmed 03-14).
+1. Test the rate limiter's Redis-down path · ROW-0314-01
+2. Load-test at 2× expected peak before flipping the flag in staging · ROW-0314-02
+3. Add the `Retry-After` header to 429 responses · ROW-0314-03
+4. Get the PR reviewed by the platform team · ROW-0314-04
 
-## Open / Next
+## Waiting on others
 
-1. Test the Redis-down path (must fail open, not block all traffic).
-2. Load-test at 2× expected peak before flipping the flag in staging.
-3. Add the `Retry-After` header to 429 responses — spec'd, not implemented.
-4. Get the PR reviewed by the platform team.
+- The platform team: review of the draft PR · ROW-0314-04
+
+## Project state
+
+- Flag `rate_limit_enabled`: off in staging and prod (Helm values, 03-14).
+- Draft PR open, no review yet.
+
+## Rulings not yet home
+
+- Default limit is 100 requests/min per API key; on a Redis outage the limiter fails open; rollout is staging first, prod only after the 2× load test (confirmed 03-12 to 03-14) · `docs/rfcs/2025-02-rate-limiting.md`
 
 ## Re-derive on pickup
 
-- Re-run the test suite (`make test ratelimit`) — **expect 14/14 green**; the cache pool refactor
-  on `main` may have moved since this was written.
-- Re-read the draft PR and the linked design doc for any review comments added after 03-14.
-- Confirm `rate_limit_enabled` is still **off** in the prod values file before doing anything else.
-
-## Suggested next steps / tools / skills
-
-- Start with the Redis-outage test — it's the riskiest unknown and blocks the staging rollout.
-- Reach for: a load-testing tool (k6 or locust), the test runner, and whatever your platform uses
-  to read/modify the PR and CI status.
-
-## References
-
-- Draft PR: `https://example.internal/pull/482`
-- Design doc: `docs/rfcs/2025-02-rate-limiting.md`
-- Failing-open requirement: `docs/rfcs/2025-02-rate-limiting.md#failure-mode`
-- Relevant commits: `git log --oneline ratelimit/`
+- Re-run `make test ratelimit` — expect 14/14 green; the cache-pool refactor on `main` may have moved since.
+- Compare the md5 of the two files above — expect them unchanged unless someone touched the limiter.
+- Confirm `rate_limit_enabled` is still off in the prod values file before anything else.

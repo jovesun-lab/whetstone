@@ -191,13 +191,14 @@
     .title-sub-2 { flex-basis: 100%; }
   }
 </style>
+<meta name="throughline-rules" content="version=0.3.0 sha256-16=f6b401c95215117a">
 </head>
 <body>
 <div id="topbar">
   <div id="topbar-left">
     <h1 class="title-main">Throughline — how it works</h1>
-    <p class="title-sub-1">Task Track within a session · Handoff across the seam · one ⭐️ MAIN thread, frozen title, verdict close</p>
-    <p class="title-sub-2" id="arcgram-attestation" style="opacity:.7"></p>
+    <p class="title-sub-1">20 rules, each drawn under the moment it first fires at · each card says what checks it</p>
+    <p class="title-sub-2" style="color:var(--title-sub-1)">Drawn from rules/task-rules.json, version 0.3.0</p>
     <div class="title-sub-2-row">
       <p class="title-sub-2">hover · drag · scroll to zoom · 0 fit · arrows to pan</p>
       <div id="zoom-ctrl">
@@ -335,101 +336,585 @@ const ARCGRAM_TELEMETRY_URL = '';
 //  STATUS_LEGEND optional map: { key: { color, label } }
 // ===========================================================================
 const nodes = [
-  // ── SESSION N — TASK TRACK (row 1, reads left → right) ──────────────────
-  { id:'MAIN', band:'SESSION', column:'C_SPINE', label:'⭐️ MAIN set', cat:'GOAL ANCHOR', type:'core', role:'goal',
-    desc:'The goal is confirmed → its TITLE FREEZES and the session gets its name — early, not at wrap.\nExactly one ⭐️ MAIN at a time. Re-read it before load-bearing steps: "am I still solving this?"', x:240, y:296 },
-  { id:'WORK', band:'SESSION', colFree:true, label:'Work loop', cat:'TASKS 🌶️ 🍏 🍋', type:'code', role:'action',
-    desc:'Every other task is origin-tagged: 🌶️ critical · 🍏 transient · 🍋 logged/recurred.\nA 🍏 that earns a log entry is promoted to 🍋. Checklist rows carry TWO boxes: built / verified — "verified" only after the NAMED check ran.', x:500, y:296 },
-  { id:'DRIFT', band:'SESSION', column:'C_CHECK', label:'On the ⭐️ MAIN?', cat:'DRIFT CHECK', type:'tool', role:'decision',
-    kind:'diamond', w:190, h:100,
-    desc:'Scan the list: still solving the MAIN, or something it slid into?\nA ballooning 🍏 is the drift signal.\nNo → STOP and re-confirm with the human. A redirect APPENDS a new ⭐️ MAIN; the original keeps its frozen title and takes an honest NOT-LANDED — never a rename.', x:760, y:270 },
-
-  { id:'RECONF', band:'SESSION', column:'C_SIDE', label:'Re-confirm', cat:'HUMAN DECIDES', type:'input', role:'decision',
-    desc:'Stop — surface the drift to the human.\nA redirect APPENDS a new ⭐️ MAIN; the original keeps its frozen title and takes an honest NOT-LANDED. Never a rename.', x:1300, y:296 },
-
-  // ── The wrap (hangs below the drift check) ──────────────────────────────
-  { id:'WRAP', band:'HANDOFF', column:'C_CHECK', label:'Verdict wrap', cat:'CLOSE · FROZEN NAMES', type:'sessionEnd', role:'output',
-    desc:'Every ⭐️ MAIN closes UNDER ITS FROZEN TITLE with a verdict:\nLANDED (+evidence) · PARTIAL · NOT-LANDED (+where it is carried).\nSilence is not a verdict. A companion strain meter says WHEN to wrap.\nThe wrap is ATOMIC: if more work lands after the handoff is written, the snapshot is STALE — re-run the wrap. A stale handoff misleads worse than none.', x:767, y:796 },
-
-  // ── THE HANDOFF — THE SEAM (row 2) ──────────────────────────────────────
-  { id:'DOC', band:'HANDOFF', column:'C_SPINE', label:'Handoff doc', cat:'PLAIN MARKDOWN · ATOMIC', type:'doc', role:'output',
-    desc:'Header: session name + id. Sections: ⭐️ Goal · State · Done (verdicts) · Decisions (numbered, append-only) · Open/Next · Re-derive (each check WITH its expected result) · References.\nLatest state + pointers — never a second log. Any agent on any platform can pick it up cold.', x:240, y:796 },
-
-  // ── SESSION N+1 — RESUME (row 3, reads left → right) ────────────────────
-  { id:'READ', band:'RESUME', column:'C_SPINE', label:'Read + orient', cat:'RESTATE THE GOAL', type:'session', role:'action',
-    desc:'Next session (any agent, any platform) reads the doc cold and restates the ⭐️ Goal back — proof it oriented.', x:240, y:1296 },
-  { id:'GAPS', band:'RESUME', column:'C_GAP', label:'Doc complete?', cat:'PICKUP CHECK', type:'tool', role:'decision',
-    kind:'diamond', w:190, h:100,
-    desc:'Missing doc, stale date, absent verdict, thin re-derive?\nEach gap is EVIDENCE about how the last session ended.', x:500, y:1270 },
-  { id:'REDER', band:'RESUME', colFree:true, label:'Re-derive', cat:'VS GROUND TRUTH', type:'tool', role:'action',
-    desc:'Run each named check, compare against its EXPECTED result.\nWhere snapshot and reality disagree, ground truth wins — and say so.', x:800, y:1296 },
-  { id:'CARRY', band:'RESUME', colFree:true, label:'Carry the ⭐️', cat:'SAME FROZEN TITLE', type:'core', role:'state',
-    desc:'Task track rebuilt around the carried-forward ⭐️ MAIN — same frozen title.\nOne boot = one session: a second task after a wrap is this session\'s second MAIN, not a new session.', x:1060, y:1296 },
-  { id:'PROPOSE', band:'RESUME', colFree:true, label:'Propose next', cat:'ONE-WORD CONFIRM', type:'output', role:'output',
-    desc:'End orientation by proposing the top Open/Next item as a concrete action — queue visible, no open-ended "what should we work on?".\nThe proposal is a default, not a lock — then the cycle repeats.', x:1320, y:1296 },
-  { id:'NEXT', free:true, colFree:true, label:'Next session', cat:'THE CYCLE ↺', type:'session', role:'state',
-    desc:'The carried ⭐️ MAIN opens Session N+2 — same thread, same frozen title until it lands.\nThis loop — anchor, wrap, hand off, re-derive, carry — is the whole skill: don\'t lose the thread, within a session or between them.', x:1900, y:1296 },
-  { id:'REPORT', band:'FREENODE', column:'C_GAP', label:'Report gap', cat:'A GAP IS A FINDING', type:'output', role:'output',
-    desc:'Say it out loud — never silently patch around it.\nThe protocol self-heals only when the pickup side reports what the wrap side skipped.', x:507, y:1415 },
+  {
+    "id": "GOAL",
+    "label": "Keep the thread across sessions",
+    "cat": "GOAL · throughline 0.3.0",
+    "type": "output",
+    "role": "goal",
+    "desc": "Every rule below is one record in rules/task-rules.json (version 0.3.0), drawn under the moment it fires at. Throughline's rules as data: the single source that the handoff checker (tools/handoff.py), a project's own gates and the flow's build script all read. The prose in SKILL.md and references/ explains these rules; this file is what is checked.",
+    "x": -120,
+    "y": 260
+  },
+  {
+    "id": "M_always",
+    "label": "Always",
+    "cat": "MOMENT",
+    "type": "sessionEnd",
+    "role": "action",
+    "desc": "3 rules fire here first: One main · Icons stack · Section by name.",
+    "x": 200,
+    "y": 260
+  },
+  {
+    "id": "RULE-one-main",
+    "label": "One main",
+    "cat": "CORE · CHECK BUILT",
+    "type": "artifact",
+    "role": "output",
+    "desc": "Exactly one ⭐️ MAIN is live at a time; more than one MAIN in a session is normal, each confirmed by the human.\nWhy: [object Object]\nPasses when: the handoff holds exactly one line that starts with ⭐️, [MAIN] or main_goal: true\nFires at: always\nChecked by: tools/handoff.py (built)\nWritten in: references/task-track.md — \"One ⭐️ MAIN at a time\"\nRelated: RULE-main-trigger",
+    "x": 200,
+    "y": 380
+  },
+  {
+    "id": "RULE-icons-stack",
+    "label": "Icons stack",
+    "cat": "CORE · CHECK NONE",
+    "type": "artifact",
+    "role": "output",
+    "desc": "Icons stack in a fixed order: 🔸 membership, then the origin icon (🌶️ 🍏 🍋), then an optional kind icon whose meaning is obvious at a glance.\nWhy: [object Object]\nPasses when: a task row reads membership, origin, kind in that order, e.g. 🔸🍋🐛\nFires at: always\nChecked by: nothing yet (none)\nWritten in: references/task-track.md — \"membership, then origin, then kind\"",
+    "x": 200,
+    "y": 500
+  },
+  {
+    "id": "RULE-section-by-name",
+    "label": "Section by name",
+    "cat": "CORE · CHECK PLANNED",
+    "type": "artifact",
+    "role": "output",
+    "desc": "A section is found by its name - the heading text after any marker starts with it - or by the alias '· Throughline: <name>' at the end of a project's own heading.\nWhy: [object Object]\nPasses when: a heading that merely contains the name inside another word does not count\nFires at: always\nChecked by: tools/handoff.py (planned)\nWritten in: references/handoff.md — \"· Throughline: <name>\"\nRelated: RULE-handoff-blocks",
+    "x": 200,
+    "y": 620
+  },
+  {
+    "id": "M_the-session-start",
+    "label": "The session start",
+    "cat": "MOMENT",
+    "type": "sessionEnd",
+    "role": "action",
+    "desc": "1 rule fires here first: Boot skeleton.",
+    "x": 520,
+    "y": 260
+  },
+  {
+    "id": "RULE-boot-skeleton",
+    "label": "Boot skeleton",
+    "cat": "STEP · CHECK NONE",
+    "type": "artifact",
+    "role": "output",
+    "desc": "At the start, copy the next-actions list verbatim before any work (the queue freeze) and write the session-start brief to disk beside it.\nWhy: [object Object]\nPasses when: a frozen queue file and a brief file exist for the session\nFires at: the session start\nChecked by: nothing yet (none)\nWritten in: references/handoff.md — \"write the session-start brief to disk\"\nRelated: RULE-brief-ids-carry-words",
+    "x": 520,
+    "y": 380
+  },
+  {
+    "id": "M_the-first-file-write",
+    "label": "The first file write",
+    "cat": "MOMENT",
+    "type": "sessionEnd",
+    "role": "action",
+    "desc": "1 rule fires here first: Main trigger.",
+    "x": 840,
+    "y": 260
+  },
+  {
+    "id": "RULE-main-trigger",
+    "label": "Main trigger",
+    "cat": "CORE · CHECK PLANNED",
+    "type": "artifact",
+    "role": "output",
+    "desc": "The MAIN is written at an observable moment: the first action that is not answering a question; with no MAIN then, stop, propose one and ask the human to confirm.\nWhy: [object Object]\nPasses when: a handoff whose Done lists work also lists a MAIN or a zero-MAIN declaration\nFires at: the first file write, the first multi-step tool work\nChecked by: tools/handoff.py (planned)\nWritten in: references/task-track.md — \"the first action that is not answering a question\"\nRelated: RULE-zero-main, RULE-one-main",
+    "x": 840,
+    "y": 380
+  },
+  {
+    "id": "M_the-human-confirms-a-main",
+    "label": "The human confirms a MAIN",
+    "cat": "MOMENT",
+    "type": "sessionEnd",
+    "role": "action",
+    "desc": "3 rules fire here first: Frozen title · Subtasks · Task surface.",
+    "x": 1160,
+    "y": 260
+  },
+  {
+    "id": "RULE-frozen-title",
+    "label": "Frozen title",
+    "cat": "CORE · CHECK NONE",
+    "type": "artifact",
+    "role": "output",
+    "desc": "A MAIN's title is frozen when the human confirms it; the verdict is given under that title, and a redirect is a new MAIN, not a rename.\nWhy: [object Object]\nPasses when: each MAIN in Done carries the title it was confirmed under\nFires at: the human confirms a MAIN, the wrap\nChecked by: nothing yet (none)\nWritten in: references/task-track.md — \"the title is frozen at confirm\"\nRelated: RULE-verdict-one-home",
+    "x": 1160,
+    "y": 380
+  },
+  {
+    "id": "RULE-subtasks",
+    "label": "Subtasks",
+    "cat": "CORE · CHECK PLANNED",
+    "type": "artifact",
+    "role": "output",
+    "desc": "Once a MAIN is confirmed it is broken into 🔸 subtasks, worked one by one; every MAIN in Done lists at least one.\nWhy: [object Object]\nPasses when: every '### MAIN' entry in Done is followed by at least one '- 🔸' line\nFires at: the human confirms a MAIN, the wrap\nChecked by: tools/handoff.py (planned)\nWritten in: references/task-track.md — \"broken into 🔸 subtasks\"\nRelated: RULE-landed-requires-every-subtask-done",
+    "x": 1160,
+    "y": 500
+  },
+  {
+    "id": "RULE-task-surface",
+    "label": "Task surface",
+    "cat": "CORE · CHECK NONE",
+    "type": "artifact",
+    "role": "output",
+    "desc": "The task list lives where the human sees it - the host's task tool and plan pane, or else the board or file the human watches - and the MAIN reaches it at the confirm instant, not at the wrap.\nWhy: [object Object]\nPasses when: the MAIN is visible in the human's task surface within the turn it was confirmed\nFires at: the human confirms a MAIN\nChecked by: nothing yet (none)\nWritten in: skills/throughline/SKILL.md — \"A task-list tool\"\nRelated: RULE-task-row",
+    "x": 1160,
+    "y": 620
+  },
+  {
+    "id": "M_before-running-a-check",
+    "label": "Before running a check",
+    "cat": "MOMENT",
+    "type": "sessionEnd",
+    "role": "action",
+    "desc": "1 rule fires here first: Pass condition before run.",
+    "x": 1480,
+    "y": 260
+  },
+  {
+    "id": "RULE-pass-condition-before-run",
+    "label": "Pass condition before run",
+    "cat": "CORE · CHECK NONE",
+    "type": "artifact",
+    "role": "output",
+    "desc": "The pass condition of a check is written before the check runs, and the row is verified only by that check.\nWhy: [object Object]\nPasses when: the two-box row names its check and its expected result before the run\nFires at: before running a check\nChecked by: nothing yet (none)\nWritten in: references/task-track.md — \"the pass condition is written before the check runs\"",
+    "x": 1480,
+    "y": 380
+  },
+  {
+    "id": "M_a-subtask-leaves-the-list",
+    "label": "A subtask leaves the list",
+    "cat": "MOMENT",
+    "type": "sessionEnd",
+    "role": "action",
+    "desc": "1 rule fires here first: Subtask leaves three ways.",
+    "x": 1800,
+    "y": 260
+  },
+  {
+    "id": "RULE-subtask-leaves-three-ways",
+    "label": "Subtask leaves three ways",
+    "cat": "CORE · CHECK PLANNED",
+    "type": "artifact",
+    "role": "output",
+    "desc": "A subtask leaves the list in one of three ways only: done (closed by a passing test), carried to a named row or file, or dropped on the human's own words.\nWhy: [object Object]\nPasses when: every '- 🔸' line in Done ends in done, in carried → <row ID or path>, or in dropped · human: \"<words>\"\nFires at: a subtask leaves the list, the wrap\nChecked by: tools/handoff.py (planned)\nWritten in: references/task-track.md — \"leaves the list three ways only\"\nRelated: RULE-landed-requires-every-subtask-done, RULE-task-row",
+    "x": 1800,
+    "y": 380
+  },
+  {
+    "id": "M_the-wrap",
+    "label": "The wrap",
+    "cat": "MOMENT",
+    "type": "sessionEnd",
+    "role": "action",
+    "desc": "9 rules fire here first: Landed requires every subtask done · Zero main · Task row · Handoff blocks · Goal is first next action · Verdict one home · Wrap skeleton · Module schema · Secrets sweep.",
+    "x": 2120,
+    "y": 260
+  },
+  {
+    "id": "RULE-landed-requires-every-subtask-done",
+    "label": "Landed requires every subtask done",
+    "cat": "CORE · CHECK PLANNED",
+    "type": "artifact",
+    "role": "output",
+    "desc": "A MAIN is LANDED only when every one of its subtasks is done.\nWhy: [object Object]\nPasses when: no LANDED MAIN in Done has a subtask that is carried, dropped or without a status\nFires at: the wrap\nChecked by: tools/handoff.py (planned)\nWritten in: templates/handoff.template.md — \"LANDED needs every subtask done\"\nRelated: RULE-subtask-leaves-three-ways",
+    "x": 2120,
+    "y": 380
+  },
+  {
+    "id": "RULE-zero-main",
+    "label": "Zero main",
+    "cat": "CORE · CHECK PLANNED",
+    "type": "artifact",
+    "role": "output",
+    "desc": "A session that changes no file may run with no MAIN, and only on the human's own words, recorded in Done as zero-MAIN.\nWhy: [object Object]\nPasses when: a handoff with no MAIN entry carries 'zero-MAIN · human: \"<words>\"' in Done\nFires at: the wrap\nChecked by: tools/handoff.py (planned)\nWritten in: templates/handoff.template.md — \"zero-MAIN · human:\"\nRelated: RULE-main-trigger",
+    "x": 2120,
+    "y": 500
+  },
+  {
+    "id": "RULE-task-row",
+    "label": "Task row",
+    "cat": "CORE · CHECK PLANNED",
+    "type": "artifact",
+    "role": "output",
+    "desc": "Every next action and every ruling not yet in its home file has its own durable row (a board row or a plan file); the handoff only points at it.\nWhy: [object Object]\nPasses when: every item in Next actions and in Rulings not yet home ends with a row ID or a file path, or the block says none\nFires at: the wrap\nChecked by: tools/handoff.py (planned)\nWritten in: references/handoff.md — \"the handoff only points at it\"\nRelated: RULE-handoff-blocks",
+    "x": 2120,
+    "y": 620
+  },
+  {
+    "id": "RULE-handoff-blocks",
+    "label": "Handoff blocks",
+    "cat": "STEP · CHECK PLANNED",
+    "type": "artifact",
+    "role": "output",
+    "desc": "A handoff carries six blocks - machine fields, where this session stopped, next actions, waiting on others, project state, rulings not yet home - plus the Goal, Done and Re-derive on pickup.\nWhy: [object Object]\nPasses when: handoff.py check finds every section of handoff.sections\nFires at: the wrap\nChecked by: tools/handoff.py (planned)\nWritten in: templates/handoff.template.md — \"sections a handoff must have are listed in rules/task-rules.json\"\nRelated: RULE-task-row, RULE-section-by-name",
+    "x": 2120,
+    "y": 740
+  },
+  {
+    "id": "RULE-goal-is-first-next-action",
+    "label": "Goal is first next action",
+    "cat": "CORE · CHECK PLANNED",
+    "type": "artifact",
+    "role": "output",
+    "desc": "The ⭐️ Goal of a handoff is a proposal the human confirms at the next start, and it is the first Next action, not a second list.\nWhy: [object Object]\nPasses when: the Goal text equals the first Next action's text\nFires at: the wrap\nChecked by: tools/handoff.py (planned)\nWritten in: templates/handoff.template.md — \"must equal the first item of Next actions\"\nRelated: RULE-frozen-title",
+    "x": 2120,
+    "y": 860
+  },
+  {
+    "id": "RULE-verdict-one-home",
+    "label": "Verdict one home",
+    "cat": "CORE · CHECK PLANNED",
+    "type": "artifact",
+    "role": "output",
+    "desc": "Each MAIN's verdict has one home, Done; Machine fields carries a generated copy that must agree.\nWhy: [object Object]\nPasses when: every '- verdict' line in Machine fields matches its MAIN in Done\nFires at: the wrap\nChecked by: tools/handoff.py (planned)\nWritten in: templates/handoff.template.md — \"a generated copy of Done\"\nRelated: RULE-frozen-title",
+    "x": 2120,
+    "y": 980
+  },
+  {
+    "id": "RULE-wrap-skeleton",
+    "label": "Wrap skeleton",
+    "cat": "STEP · CHECK NONE",
+    "type": "artifact",
+    "role": "output",
+    "desc": "The wrap runs seven steps in order: ask before wrapping; a verdict per MAIN; close the task list and its rows with the verdicts; write the session log (one file plus an index line); rewrite the handoff; run the checks; name the session, then the final report.\nWhy: [object Object]\nPasses when: the wrap's transcript shows the seven steps in order\nFires at: the wrap\nChecked by: nothing yet (none)\nWritten in: references/handoff.md — \"The wrap runs seven steps\"\nRelated: RULE-module-schema",
+    "x": 2120,
+    "y": 1100
+  },
+  {
+    "id": "RULE-module-schema",
+    "label": "Module schema",
+    "cat": "STEP · CHECK PLANNED",
+    "type": "artifact",
+    "role": "output",
+    "desc": "A project's own wrap or boot steps are modules in one schema: a trigger, dependencies, pass criteria fixed in the module, a not-needed condition that satisfies dependents, a breaker of 3.\nWhy: [object Object]\nPasses when: each project module validates against module_schema\nFires at: the wrap, the session start\nChecked by: nothing yet (planned)\nWritten in: references/handoff.md — \"a project's own steps are modules\"\nRelated: RULE-wrap-skeleton",
+    "x": 2120,
+    "y": 1220
+  },
+  {
+    "id": "RULE-secrets-sweep",
+    "label": "Secrets sweep",
+    "cat": "CORE · CHECK BUILT",
+    "type": "artifact",
+    "role": "output",
+    "desc": "A handoff is shareable: no keys, tokens, passwords or personal data; the checker warns on obvious patterns, and real redaction is the writer's.\nWhy: [object Object]\nPasses when: handoff.py check prints no 'possible leaked secret' warning\nFires at: the wrap\nChecked by: tools/handoff.py (built)\nWritten in: templates/handoff.template.md — \"Secrets check\"",
+    "x": 2120,
+    "y": 1340
+  },
+  {
+    "id": "M_the-next-session-start-reads-the-previous-brief",
+    "label": "The next session reads the brief",
+    "cat": "MOMENT",
+    "type": "sessionEnd",
+    "role": "action",
+    "desc": "1 rule fires here first: Brief ids carry words.",
+    "x": 2440,
+    "y": 260
+  },
+  {
+    "id": "RULE-brief-ids-carry-words",
+    "label": "Brief ids carry words",
+    "cat": "CORE · CHECK PLANNED",
+    "type": "artifact",
+    "role": "output",
+    "desc": "An ID never stands alone: in the session-start brief, every ID-like token carries words saying what it is.\nWhy: [object Object]\nPasses when: handoff.py brief prints no WARN for the brief\nFires at: the next session start reads the previous brief\nChecked by: tools/handoff.py (planned)\nWritten in: references/handoff.md — \"An ID never stands alone\"\nRelated: RULE-boot-skeleton",
+    "x": 2440,
+    "y": 380
+  }
 ];
 
 const edges = [
-  // Session N spine
-  { f:'MAIN',  t:'WORK',  fromPt:'rgt', toPt:'lft', route:'hvh', crit:true, lbl:'🔑1 anchors' },
-  { f:'WORK',  t:'DRIFT', fromPt:'rgt', toPt:'lft', route:'hvh' },
-  { f:'DRIFT', t:'WRAP',  fromPt:'bot', toPt:'top', branch:'Y', crit:true, desc:'Yes — still on the MAIN: work runs until the session closes with verdicts.' },
-  // NOTE: a headless attach check may report this edge a few px "detached" — the arrowhead gap on a
-  // diamond-tip exit, a known artifact of stubbed text metrics. Arrowhead-aware measurement and the
-  // live render both confirm the wire is attached.
-  { f:'DRIFT', t:'RECONF', fromPt:'rgt', toPt:'lft', route:'hvh', branch:'N', desc:'No — drifted: stop and re-confirm with the human.' },
-  { f:'RECONF', t:'WORK', fromPt:'top', toPt:'top', style:'dashed', lbl:'appends ⭐️' },
-
-  // The seam
-  { f:'WRAP',  t:'DOC',   fromPt:'lft', toPt:'rgt', route:'hvh', crit:true },
-  { f:'DOC',   t:'READ',  fromPt:'bot', toPt:'top', crit:true, lbl:'🔑2 picked up' },
-
-  // Session N+1 spine
-  { f:'READ',  t:'GAPS',  fromPt:'rgt', toPt:'lft', route:'hvh' },
-  { f:'GAPS',  t:'REDER', fromPt:'rgt', toPt:'lft', route:'hvh', branch:'Y' },
-  { f:'GAPS',  t:'REPORT', fromPt:'bot', toPt:'top', branch:'N' },
-  { f:'REPORT', t:'REDER', fromPt:'bot', toPt:'bot', route:'3leg', via:1545, style:'dashed', lbl:'then continue' },
-  { f:'REDER', t:'CARRY', fromPt:'rgt', toPt:'lft', route:'hvh' },
-  { f:'CARRY', t:'PROPOSE', fromPt:'rgt', toPt:'lft', route:'hvh' },
-
-  // The cycle — next session is Session N again
-  { f:'PROPOSE', t:'NEXT', fromPt:'rgt', toPt:'lft', route:'hvh', style:'dashed', lbl:'↺ repeats' },
+  {
+    "f": "GOAL",
+    "t": "M_always",
+    "fromPt": "rgt",
+    "toPt": "lft",
+    "route": "hvh",
+    "style": "dashed"
+  },
+  {
+    "f": "M_always",
+    "t": "RULE-one-main",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "RULE-one-main",
+    "t": "RULE-icons-stack",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "RULE-icons-stack",
+    "t": "RULE-section-by-name",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "M_always",
+    "t": "M_the-session-start",
+    "fromPt": "rgt",
+    "toPt": "lft",
+    "route": "hvh"
+  },
+  {
+    "f": "M_the-session-start",
+    "t": "RULE-boot-skeleton",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "M_the-session-start",
+    "t": "M_the-first-file-write",
+    "fromPt": "rgt",
+    "toPt": "lft",
+    "route": "hvh"
+  },
+  {
+    "f": "M_the-first-file-write",
+    "t": "RULE-main-trigger",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "M_the-first-file-write",
+    "t": "M_the-human-confirms-a-main",
+    "fromPt": "rgt",
+    "toPt": "lft",
+    "route": "hvh"
+  },
+  {
+    "f": "M_the-human-confirms-a-main",
+    "t": "RULE-frozen-title",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "RULE-frozen-title",
+    "t": "RULE-subtasks",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "RULE-subtasks",
+    "t": "RULE-task-surface",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "M_the-human-confirms-a-main",
+    "t": "M_before-running-a-check",
+    "fromPt": "rgt",
+    "toPt": "lft",
+    "route": "hvh"
+  },
+  {
+    "f": "M_before-running-a-check",
+    "t": "RULE-pass-condition-before-run",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "M_before-running-a-check",
+    "t": "M_a-subtask-leaves-the-list",
+    "fromPt": "rgt",
+    "toPt": "lft",
+    "route": "hvh"
+  },
+  {
+    "f": "M_a-subtask-leaves-the-list",
+    "t": "RULE-subtask-leaves-three-ways",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "M_a-subtask-leaves-the-list",
+    "t": "M_the-wrap",
+    "fromPt": "rgt",
+    "toPt": "lft",
+    "route": "hvh"
+  },
+  {
+    "f": "M_the-wrap",
+    "t": "RULE-landed-requires-every-subtask-done",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "RULE-landed-requires-every-subtask-done",
+    "t": "RULE-zero-main",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "RULE-zero-main",
+    "t": "RULE-task-row",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "RULE-task-row",
+    "t": "RULE-handoff-blocks",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "RULE-handoff-blocks",
+    "t": "RULE-goal-is-first-next-action",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "RULE-goal-is-first-next-action",
+    "t": "RULE-verdict-one-home",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "RULE-verdict-one-home",
+    "t": "RULE-wrap-skeleton",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "RULE-wrap-skeleton",
+    "t": "RULE-module-schema",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "RULE-module-schema",
+    "t": "RULE-secrets-sweep",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  },
+  {
+    "f": "M_the-wrap",
+    "t": "M_the-next-session-start-reads-the-previous-brief",
+    "fromPt": "rgt",
+    "toPt": "lft",
+    "route": "hvh"
+  },
+  {
+    "f": "M_the-next-session-start-reads-the-previous-brief",
+    "t": "RULE-brief-ids-carry-words",
+    "fromPt": "bot",
+    "toPt": "top",
+    "route": "vhv"
+  }
 ];
 const _isThinkflow = nodes.some(n => n.kind === 'diamond');
 
 const COLUMNS = [
+  {
+    "id": "always",
+    "label": "3 rules",
+    "members": [
+      "M_always",
+      "RULE-one-main",
+      "RULE-icons-stack",
+      "RULE-section-by-name"
+    ]
+  },
+  {
+    "id": "the-session-start",
+    "label": "1 rule",
+    "members": [
+      "M_the-session-start",
+      "RULE-boot-skeleton"
+    ]
+  },
+  {
+    "id": "the-first-file-write",
+    "label": "1 rule",
+    "members": [
+      "M_the-first-file-write",
+      "RULE-main-trigger"
+    ]
+  },
+  {
+    "id": "the-human-confirms-a-main",
+    "label": "3 rules",
+    "members": [
+      "M_the-human-confirms-a-main",
+      "RULE-frozen-title",
+      "RULE-subtasks",
+      "RULE-task-surface"
+    ]
+  },
+  {
+    "id": "before-running-a-check",
+    "label": "1 rule",
+    "members": [
+      "M_before-running-a-check",
+      "RULE-pass-condition-before-run"
+    ]
+  },
+  {
+    "id": "a-subtask-leaves-the-list",
+    "label": "1 rule",
+    "members": [
+      "M_a-subtask-leaves-the-list",
+      "RULE-subtask-leaves-three-ways"
+    ]
+  },
+  {
+    "id": "the-wrap",
+    "label": "9 rules",
+    "members": [
+      "M_the-wrap",
+      "RULE-landed-requires-every-subtask-done",
+      "RULE-zero-main",
+      "RULE-task-row",
+      "RULE-handoff-blocks",
+      "RULE-goal-is-first-next-action",
+      "RULE-verdict-one-home",
+      "RULE-wrap-skeleton",
+      "RULE-module-schema",
+      "RULE-secrets-sweep"
+    ]
+  },
+  {
+    "id": "the-next-session-start-reads-the-previous-brief",
+    "label": "1 rule",
+    "members": [
+      "M_the-next-session-start-reads-the-previous-brief",
+      "RULE-brief-ids-carry-words"
+    ]
+  }
 ];
-const HCOLUMNS = [
-  { id:'C_SPINE', members:['MAIN','DOC','READ'] },
-  { id:'C_CHECK', members:['DRIFT','WRAP'] },
-  { id:'C_SIDE',  members:['RECONF'] },
-  { id:'C_GAP',   members:['GAPS','REPORT'] },
-];
+const HCOLUMNS = [];
 
-const BANDS = [
-  { id:'SESSION', label:'SESSION N · TASK TRACK', y:200,  h:250,
-    fill:'#1a1f3a', color:'#6985c2',
-    members:['MAIN','WORK','DRIFT','RECONF'] },
-  { id:'HANDOFF', label:'THE HANDOFF · THE SEAM', y:700,  h:250,
-    fill:'#14261c', color:'#6cc77b',
-    members:['DOC','WRAP'] },
-  { id:'RESUME',  label:'SESSION N+1 · RESUME',   y:1200, h:250,
-    fill:'#102626', color:'#7bccc7',
-    members:['READ','GAPS','REDER','CARRY','PROPOSE'] },
-  { id:'FREENODE', label:'FREENODE', y:1380, h:140,
-    fill:'#2a1e15', color:'#ffaa78',
-    members:['REPORT'] },
-];
+const BANDS = [];
 BANDS.forEach(b => { if (b._authoredY === undefined) b._authoredY = b.y; });
 [...BANDS].sort((a, b) => a._authoredY - b._authoredY).forEach((b, i) => { b._membershipKey = b.id ?? '__band' + i; });
 const _hbands = BANDS.some(b => !b.group);
 
-const CANVASES = [
-];
+const CANVASES = [];
 
 const STATUS_LEGEND = {};
 
