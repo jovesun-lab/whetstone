@@ -6,6 +6,7 @@
     strain-sign.sh --agent ana --ledger ./Log.strain    ...and join a project ledger
     strain-sign.sh --instructions                       the block for the instruction file
     strain-sign.sh --decline-instructions               the user said no: never offer it again
+    strain-sign.sh --agent ana --aka Annie --aka 安娜     0.10.0: other names that resolve to ana
 
 Why signing exists: one machine, one state dir, more than one agent. The path cannot
 tell agents apart (two windows on one project look identical to the hooks), so
@@ -38,7 +39,9 @@ from _strain_common import (state_dir, session_path, load, save, now_iso, resolv
                             ledger_rows, signals_of, state_lock, user_line, details_line,
                             why_unsaved, write_hint, default_agent_name, instruction_files,
                             start_block, block_state, load_prefs, save_pref, prefs_path,
-                            PRODUCT_OF_SUBSTRATE, ledger_sign, duplicate_numbers)
+                            PRODUCT_OF_SUBSTRATE, ledger_sign, duplicate_numbers,
+                            canonical_name, declare_names, names_of, merge_names,
+                            ledgers_registry_path)
 
 
 def _when(ts):
@@ -113,6 +116,7 @@ def main(argv):
     ap.add_argument("--decline-instructions", action="store_true")
     ap.add_argument("--continue", dest="cont", default=None)   # 0.9.0: the session this one continues
     ap.add_argument("--seed", type=int, default=None)          # 0.9.0: the next number, once per book
+    ap.add_argument("--aka", action="append", default=[])      # 0.10.0: another name for this agent
     args, _ = ap.parse_known_args(argv)
 
     sdir = state_dir(args.state_dir)
@@ -148,9 +152,18 @@ def main(argv):
         st.setdefault("sid", sid)
         # 0.8.3 C4: a name the user gave > the name this session already signed with >
         # '<host> · <project folder>', the same every session (the chain links by name).
-        agent = (args.agent or os.environ.get("STRAIN_AGENT") or str(st.get("agent") or "")
+        typed = (args.agent or os.environ.get("STRAIN_AGENT") or str(st.get("agent") or "")
                  or default_agent_name(st))
+        # 0.10.0: another name resolves to the agent's one name -- the book's `names` rows when the
+        # book is known (--ledger, this session's state), then the registry's `aka`.
+        reg = load_ledgers(sdir)
+        known = os.path.abspath(args.ledger) if args.ledger else str(st.get("ledger") or "")
+        agent, name_why = canonical_name(typed, reg, ledger_rows(known) if known else [])
         st["agent"] = agent
+        if agent != typed:
+            st["signedAs"] = typed
+        else:
+            st.pop("signedAs", None)
         first_sign = not st.get("signedAt")
         st.setdefault("signedAt", now_iso())
         # 0.5.1 ledger resolution: explicit --ledger > this session's state > the
@@ -166,8 +179,7 @@ def main(argv):
             if ledger:
                 ledger_how = "session-state"
             else:
-                ledger = str((load_ledgers(sdir).get(str(agent)) or {})
-                             .get("ledger") or "")
+                ledger = str((reg.get(str(agent)) or {}).get("ledger") or "")
                 if ledger:
                     ledger_how = "registry"
         if ledger:
@@ -177,9 +189,12 @@ def main(argv):
             return 1
 
     book_note, report, why, num_note, clash_note = "", "", "", "", ""
+    kept, refused = [], []
     if ledger:
         # 0.9.0: the number is given here, in one lock with the append (ledger_sign).
         row = {"type": "boot-sign", "ts": now_iso(), "session": sid, "agent": agent}
+        if agent != typed:
+            row["as"] = typed
         n, num_how, rows, why = ledger_sign(ledger, row, cont=args.cont, seed=args.seed)
         if num_how == "seed-refused":
             sys.stderr.write("seed refused: %s is not above a number this book already gave %s -- "
@@ -189,7 +204,19 @@ def main(argv):
             report = previous_session_report(sdir, rows, str(agent), sid)   # first sign only
         if not why:
             book_note = " · booked"
-            save_ledgers(sdir, agent, ledger)
+            # 0.10.0: the names declared now (--aka) and the ones the book already holds for this agent (QA
+            # finding F2: a fresh registry learns them) -- checked and saved under one lock (F3)
+            had = names_of({}, rows).get(str(agent)) or []
+            kept, refused, saved = declare_names(sdir, agent, ledger, list(args.aka) + had, rows)
+            if not saved:   # QA, second round: a failed save loses the names - say so
+                sys.stderr.write("other names not kept: the registry could not be written (%s)\n"
+                                 % ledgers_registry_path(sdir))
+            kept = [n for n in kept if n not in had]
+            grown = merge_names(had, kept)
+            if len(grown) > len(had):
+                nwhy = ledger_append_why(ledger, {"type": "names", "ts": now_iso(), "agent": agent, "aka": grown})
+                if nwhy:
+                    sys.stderr.write("names not booked: %s\n" % nwhy)
             if n:
                 num_note = " · S%d" % n
             elif num_how == "unseeded":
@@ -205,7 +232,16 @@ def main(argv):
         else:
             book_note = " · WARNING: the book could not be written"
             report = ""
-    sys.stdout.write("Strain · Owner: %s%s — signed%s\n" % (agent, num_note, book_note))
+    if args.aka and not ledger:
+        kept, refused, ok = declare_names(sdir, agent, "", args.aka, [])
+        if not ok:
+            sys.stderr.write("other names not kept: the registry could not be written\n")
+    for n, r in refused:
+        sys.stderr.write("--aka %s refused: %s; not kept\n" % (n, r))
+    if name_why:
+        sys.stderr.write("name: %s\n" % name_why)
+    shown = agent + (" (signed as %s)" % typed if agent != typed else "")
+    sys.stdout.write("Strain · Owner: %s%s — signed%s\n" % (shown, num_note, book_note))
     if clash_note:
         sys.stdout.write(clash_note + "\n")
     if report:

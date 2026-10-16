@@ -4,6 +4,11 @@ the JSON payload a host would send, in a throwaway state directory.
 
     python3 tools/selftest.py            run everything
     python3 tools/selftest.py -v         print each check
+    python3 tools/selftest.py --only 0.10.0 --tmp <folder>
+                                         0.10.0's section alone, in a new folder under <folder>; it deletes
+                                         nothing and prints the folder (QA, second round)
+    python3 tools/selftest.py --keep     the whole run without the final cleanup (section 0.8.3 still
+                                         removes two of its own fixture files)
 
 The checks that matter most are the ones for failures this tool has actually shipped
 before: two sessions sharing one counter, a recorded tier landing in a file the reader
@@ -30,7 +35,7 @@ def check(name, cond, detail=""):
 # 0.8.0: the host variables that name a session are stripped from every child run, so a
 # check never depends on the shell the selftest happens to run in (a Claude Code or Codex
 # shell carries its own session id, and 0.8.0 treats those as identity sources).
-HOST_VARS = ("STRAIN_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_ENV_FILE",
+HOST_VARS = ("STRAIN_SESSION", "STRAIN_AGENT", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_ENV_FILE",
              "STRAIN_SUBSTRATE", "CLAUDE_CODE_ENTRYPOINT", "STRAIN_CONTEXT_LIMIT",
              "STRAIN_STATE_DIR", "XDG_STATE_HOME", "CODEX_HOME")
 CLEAN_ENV = {k: v for k, v in os.environ.items() if k not in HOST_VARS}
@@ -1143,8 +1148,218 @@ def section_090(tmp):
           r9 == 0 and "S3" in o9 and "share" in o9 and "/" not in o9.split("share", 1)[-1].split("\n")[0], o9)
 
 
+def section_0100(tmp):
+    """0.10.0: a wrap's start (strain-wrap.sh --start / --cancel) and an agent's names (strain-sign.sh --aka).
+    Asked for so a board can show the wrap as started, and so the name tag knows the user's other names for
+    an agent. Written first, before the code.
+    """
+    import importlib
+    if SCRIPTS not in sys.path:
+        sys.path.insert(0, SCRIPTS)
+    common = importlib.import_module("_strain_common")
+
+    def rows_of(path):
+        try:
+            with open(path) as f:
+                return [json.loads(l) for l in f if l.strip()]
+        except Exception:
+            return []
+
+    def text_of(path):
+        with open(path) as f:
+            return f.read()
+
+    # ---- A: the wrap's start -------------------------------------------------------------
+    sdir = os.path.join(tmp, "w0100")
+    book = os.path.join(tmp, "w0100-book", "Log.strain")
+    os.makedirs(os.path.dirname(book), exist_ok=True)
+    env = {"STRAIN_STATE_DIR": sdir}
+
+    def sign(args):
+        return run("_strain_sign.py", None, list(args), env)
+
+    def wrap(args):
+        return run("_strain_wrap.py", None, list(args), env)
+
+    tick(sdir, "w-a")
+    sign(["--agent", "ana", "--session", "w-a", "--ledger", book])
+    o, e, r = wrap(["--start", "--session", "w-a"])
+    st = state_of(sdir, "w-a")
+    check("0.10.0 W1: --start marks the wrap's start, not its end",
+          r == 0 and bool(st.get("wrapStartedAt")) and not st.get("wrappedAt") and "wrapStartTick" in st, (r, o, e, st))
+    check("0.10.0 W2: --start says so in plain words, no path on stdout",
+          "Owner: ana — wrap started" in o and "/" not in o, o)
+    last = (rows_of(book) or [{}])[-1]
+    check("0.10.0 W3: a signed session books a wrap-start row",
+          last.get("type") == "wrap-start" and last.get("session") == "w-a" and last.get("agent") == "ana", last)
+    o, e, r = wrap(["--status", "--session", "w-a"])
+    try:
+        shown = json.loads(o).get("wrapStartedAt")
+    except Exception:
+        shown = None
+    check("0.10.0 W4: --status shows the start", r == 0 and bool(shown) and shown == st.get("wrapStartedAt"), o)
+    o, e, r = wrap(["--session", "w-a"])
+    st2 = state_of(sdir, "w-a")
+    check("0.10.0 W5: the stamp after a start keeps the start as history",
+          r == 0 and bool(st2.get("wrappedAt")) and bool(st2.get("wrapStartedAt"))
+          and st2.get("wrapStartedAt") == st.get("wrapStartedAt"), st2)
+
+    tick(sdir, "w-b")
+    sign(["--agent", "ana", "--session", "w-b", "--ledger", book])
+    wrap(["--start", "--session", "w-b"])
+    o, e, r = wrap(["--cancel", "--session", "w-b"])
+    st = state_of(sdir, "w-b")
+    check("0.10.0 W6: --cancel (the user says go on) removes the start and books wrap-cancel, in plain words",
+          r == 0 and "wrapStartedAt" not in st and "wrapStartTick" not in st and not st.get("wrappedAt")
+          and (rows_of(book) or [{}])[-1].get("type") == "wrap-cancel" and "wrap called off" in o, (r, o, e, st))
+    before, stb = text_of(book), state_of(sdir, "w-b")
+    o, e, r = wrap(["--cancel", "--session", "w-b"])
+    check("0.10.0 W7: --cancel with no start -> exit 2, nothing written",
+          r == 2 and text_of(book) == before and state_of(sdir, "w-b") == stb, (r, o, e))
+    # W8 on a session WITH a start, so a missing guard would call it off (a break stayed green on a session without one)
+    wrap(["--start", "--session", "w-b"])
+    before, stb = text_of(book), state_of(sdir, "w-b")
+    o, e, r = wrap(["--start", "--cancel", "--session", "w-b"])
+    check("0.10.0 W8: --start with --cancel -> exit 2, nothing written",
+          r == 2 and text_of(book) == before and state_of(sdir, "w-b") == stb and bool(stb.get("wrapStartedAt")), (r, o, e))
+
+    # ---- B: names, the pure resolver ----------------------------------------------------
+    cn = getattr(common, "canonical_name", None)
+    check("0.10.0 N1: canonical_name exists (pure: the typed name, the registry, the book's rows in -> the name out)", callable(cn))
+    if callable(cn):
+        reg = {"Orion": {"ledger": "/b", "aka": ["Ori", "小猎"]}, "Vega": {"ledger": "/c", "aka": ["Vee"]}}
+        check("0.10.0 N2: another name resolves to its agent's one name",
+              cn("小猎", reg, [])[0] == "Orion" and cn("Vee", reg, [])[0] == "Vega", (cn("小猎", reg, []), cn("Vee", reg, [])))
+        check("0.10.0 N3: another name matches ignoring case", cn("ori", reg, [])[0] == "Orion", cn("ori", reg, []))
+        check("0.10.0 N4: an agent's own name resolves to itself; an unknown name stays as typed, with no warning",
+              cn("Orion", reg, []) == ("Orion", "") and cn("ana", reg, []) == ("ana", ""), (cn("Orion", reg, []), cn("ana", reg, [])))
+        two = cn("x", {"A": {"aka": ["x"]}, "B": {"aka": ["X"]}}, [])
+        check("0.10.0 N5: a name two agents claim stays as typed, with a reason -- never a guess", two[0] == "x" and bool(two[1]), two)
+        check("0.10.0 N6: the book's names rows resolve too (a machine with no registry)",
+              cn("小琴", {}, [{"type": "names", "agent": "Lyra", "aka": ["小琴"]}])[0] == "Lyra")
+
+    # ---- B: names, the commands ----------------------------------------------------------
+    sdir = os.path.join(tmp, "n0100")
+    book = os.path.join(tmp, "n0100-book", "Log.strain")
+    os.makedirs(os.path.dirname(book), exist_ok=True)
+    env = {"STRAIN_STATE_DIR": sdir}
+
+    def sign(args, e=None):
+        return run("_strain_sign.py", None, list(args), e or env)
+
+    def reg_of(d):
+        try:
+            with open(os.path.join(d, "ledgers.json")) as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    o1, e1, r1 = sign(["--agent", "Orion", "--aka", "Ori", "--aka", "小猎", "--session", "h-1", "--ledger", book])
+    names = [r for r in rows_of(book) if r.get("type") == "names"]
+    check("0.10.0 N7: --aka keeps the other names in the registry and once in the book",
+          r1 == 0 and sorted(reg_of(sdir).get("Orion", {}).get("aka", [])) == sorted(["Ori", "小猎"])
+          and len(names) == 1 and names[0].get("agent") == "Orion" and sorted(names[0].get("aka", [])) == sorted(["Ori", "小猎"]),
+          (o1, e1, reg_of(sdir), names))
+    check("0.10.0 N8: the agent's own name signs as before -- no 'signed as' in the receipt",
+          "Owner: Orion · S1 — signed · booked" in o1 and "signed as" not in o1, o1)
+    o2, e2, r2 = sign(["--agent", "小猎", "--session", "h-2"])
+    bs = [r for r in rows_of(book) if r.get("type") == "boot-sign"]
+    st = state_of(sdir, "h-2")
+    check("0.10.0 N9: a sign under another name gets the agent's book and next number, both names in the receipt",
+          r2 == 0 and "Owner: Orion (signed as 小猎) · S2 — signed · booked" in o2, (o2, e2))
+    check("0.10.0 N10: the boot-sign row and the session carry the agent's name, and the typed one beside it",
+          bs and bs[-1].get("agent") == "Orion" and bs[-1].get("as") == "小猎" and bs[-1].get("n") == 2
+          and st.get("agent") == "Orion" and st.get("signedAs") == "小猎", (bs[-1:], st.get("agent"), st.get("signedAs")))
+    check("0.10.0 N17: a sign without --aka keeps the other names the registry holds",
+          sorted(reg_of(sdir).get("Orion", {}).get("aka", [])) == sorted(["Ori", "小猎"]), reg_of(sdir).get("Orion"))
+    check("0.10.0 N11: the previous-session report reads the agent's chain under its one name",
+          "previous session (Orion · h-1" in o2, o2)
+    sign(["--agent", "Orion", "--aka", "ori", "--session", "h-1"])
+    check("0.10.0 N12: declaring a name already kept (any case) adds no second names row",
+          len([r for r in rows_of(book) if r.get("type") == "names"]) == 1, [r for r in rows_of(book) if r.get("type") == "names"])
+
+    bbook = os.path.join(tmp, "n0100-bbook", "Log.strain")
+    os.makedirs(os.path.dirname(bbook), exist_ok=True)
+    sign(["--agent", "Vega", "--aka", "Vee", "--session", "b-1", "--ledger", bbook])
+    before = reg_of(sdir).get("Orion", {}).get("aka", [])
+    o3, e3, r3 = sign(["--agent", "Orion", "--aka", "Vega", "--aka", "vee", "--session", "h-1"])
+    check("0.10.0 N13: another agent's name, or another agent's other name, is refused with a reason and not kept",
+          r3 == 0 and sorted(reg_of(sdir).get("Orion", {}).get("aka", [])) == sorted(before)
+          and "Vega" in e3 and "vee" in e3, (e3, reg_of(sdir).get("Orion")))
+
+    tdir = os.path.join(tmp, "n0100-two")
+    os.makedirs(tdir, exist_ok=True)
+    with open(os.path.join(tdir, "ledgers.json"), "w") as f:
+        json.dump({"A": {"ledger": "", "aka": ["x"]}, "B": {"ledger": "", "aka": ["x"]}}, f)
+    o4, e4, r4 = sign(["--agent", "x", "--session", "t-1"], {"STRAIN_STATE_DIR": tdir})
+    check("0.10.0 N14: a name two agents claim signs as typed, with a warning for the agent (stderr)",
+          r4 == 0 and "Owner: x — signed" in o4 and "signed as" not in o4 and "A" in e4 and "B" in e4, (o4, e4))
+
+    o5, e5, r5 = run("_strain_wrap.py", None, ["--agent", "小猎", "--session", "h-2"], env)
+    wr = [r for r in rows_of(book) if r.get("type") == "wrap"]
+    check("0.10.0 N15: a wrap under another name books the agent's one name",
+          r5 == 0 and wr and wr[-1].get("agent") == "Orion" and "Owner: Orion" in o5, (o5, wr[-1:]))
+
+    fdir = os.path.join(tmp, "n0100-fresh")
+    o6, e6, r6 = sign(["--agent", "小猎", "--session", "h-9", "--ledger", book], {"STRAIN_STATE_DIR": fdir})
+    check("0.10.0 N16: with --ledger on a machine with no registry, the book's names row resolves the name",
+          r6 == 0 and "Owner: Orion (signed as 小猎) · S3 — signed · booked" in o6, (o6, e6))
+
+    # ---- QA, first round (written first) ----------------
+    o7, e7, r7 = sign(["--agent", "小猎", "--session", "h-10"], {"STRAIN_STATE_DIR": fdir})
+    check("0.10.0 N18 (F2): the names recovered from the book are kept in the registry - a second fresh session with no --ledger still resolves",
+          r7 == 0 and "Owner: Orion (signed as 小猎) · S4 — signed · booked" in o7, (o7, e7))
+    if callable(cn):
+        reg = {"Vega": {"ledger": "/c", "aka": ["Vee"]}, "Other": {"ledger": "/o", "aka": ["VEGA"]}}
+        check("0.10.0 N19 (F1): an agent's own name matches ignoring case, and before any other name",
+              cn("vega", reg, [])[0] == "Vega" and cn("VEGA", reg, [])[0] == "Vega",
+              (cn("vega", reg, []), cn("VEGA", reg, [])))
+        two = cn("ANA", {"ana": {"ledger": ""}, "Ana": {"ledger": ""}}, [])
+        check("0.10.0 N20 (F1): a name that matches two agents' own names by case stays as typed, with a reason; the exact one still resolves",
+              two[0] == "ANA" and bool(two[1]) and cn("Ana", {"ana": {}, "Ana": {}}, []) == ("Ana", ""), two)
+    dn = getattr(common, "declare_names", None)
+    check("0.10.0 N21 (F3): declare_names exists - the claim check and the save under one registry lock", callable(dn))
+    if callable(dn):
+        cdir = os.path.join(tmp, "n0100-claims")
+        os.makedirs(cdir, exist_ok=True)
+        with open(os.path.join(cdir, "ledgers.json"), "w") as f:
+            json.dump({"B": {"ledger": "", "aka": ["x"]}}, f)
+        kept, refused, ok = dn(cdir, "A", "", ["x", "y"], [])
+        reg = reg_of(cdir)
+        check("0.10.0 N22 (F3): a name another agent holds in the registry on disk is refused at the save; the free one is kept",
+              ok and kept == ["y"] and [n for n, _ in refused] == ["x"] and reg.get("A", {}).get("aka") == ["y"]
+              and reg.get("B", {}).get("aka") == ["x"], (kept, refused, ok, reg))
+
+    # QA, second round: a registry that cannot be written loses the names - the sign says so (stderr), still books
+    xdir = os.path.join(tmp, "n0100-unwritable")
+    os.makedirs(os.path.join(xdir, "ledgers.json"), exist_ok=True)      # a folder where the registry file should be
+    xbook = os.path.join(tmp, "n0100-xbook", "Log.strain")
+    os.makedirs(os.path.dirname(xbook), exist_ok=True)
+    o8, e8, r8 = sign(["--agent", "Ana", "--aka", "Annie", "--session", "x-1", "--ledger", xbook], {"STRAIN_STATE_DIR": xdir})
+    check("0.10.0 N23: a registry that cannot be written - the other names are reported as not kept; the sign still books",
+          r8 == 0 and "not kept" in e8 and "Owner: Ana · S1 — signed · booked" in o8, (o8, e8))
+
+
+def _arg(flag):
+    return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv and sys.argv.index(flag) + 1 < len(sys.argv) else None
+
+
 def main():
-    tmp = tempfile.mkdtemp(prefix="strain-selftest-")
+    only, base = _arg("--only"), _arg("--tmp")
+    tmp = tempfile.mkdtemp(prefix="strain-selftest-", dir=base)
+    if only is not None:
+        # QA, second round: one section, nothing deleted (section 0.10.0 removes no file; the scripts it runs
+        # write by temp file + rename), the folder named for the caller
+        if only != "0.10.0":
+            print("--only knows 0.10.0 only")
+            return 2
+        section_0100(tmp)
+        print("kept: " + tmp)
+        print("\n%d/%d checks passed (section 0.10.0 only)" % (len(PASS), len(PASS) + len(FAIL)))
+        if FAIL:
+            print("failed: " + ", ".join(FAIL))
+            return 1
+        return 0
     try:
         # ---- counting, per session -------------------------------------------------
         sdir = os.path.join(tmp, "s1")
@@ -1957,9 +2172,14 @@ def main():
         section_083(tmp)
         section_084(tmp)
         section_090(tmp)
+        section_0100(tmp)
 
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        # 0.10.0 (QA, first round): --keep deletes nothing and names the folder it used
+        if "--keep" in sys.argv:
+            print("kept: " + tmp)
+        else:
+            shutil.rmtree(tmp, ignore_errors=True)
 
     total = len(PASS) + len(FAIL)
     print("\n%d/%d checks passed" % (len(PASS), total))

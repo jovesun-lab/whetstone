@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.10.0 — 2026-10-15
+
+**A board can see a wrap begin, and an agent keeps one chain under all its names.**
+
+- **`strain-wrap.sh --start`** marks a wrap's first step (`wrapStartedAt`, `wrapStartTick`, a
+  `wrap-start` row); **`--cancel`** calls it off (a `wrap-cancel` row; no start → exit 2,
+  nothing written); `--start` with `--cancel` is refused. The stamp is unchanged and keeps
+  the start as history. Asked for so a board shows "wrapping" from the wrap's start, not
+  from a guess at 70 % full.
+- **`strain-sign.sh --aka <name>`** declares an agent's other names (registry `aka`, a book
+  `names` row). A sign under one of them resolves to the agent — its book, its next number,
+  its previous-session report — and the receipt shows both names
+  (`Owner: Orion (signed as 小猎)`); the row keeps the typed name in `as`. Matched
+  ignoring case; another agent's name refused; two claims → signed as typed, with a warning.
+  Found live: an agent signed under a nickname got no book and no number.
+- The registry keeps an agent's other names across signs; an empty ledger never replaces a
+  known one.
+- After QA (first round): an agent's own name matches ignoring case, before
+  any other name, and a name that matches two agents' names by case is refused with a reason;
+  the names a book holds are copied into a fresh registry, so the next session without
+  `--ledger` still resolves; the claim check and the save run under one registry lock
+  (`declare_names`), so two agents cannot both take a free name.
+- Selftest section 0.10.0: 31 checks, written first and seen red (one guards today's receipt
+  and is green by design); 24 deliberate breaks on a copy, each red — two of them only after
+  a check was tightened (W8 on a session with a start) or added (N17). The selftest no longer
+  lets a real `STRAIN_AGENT` reach its runs. `--only 0.10.0 --tmp <folder>` runs that section alone in
+  a new folder under <folder> and deletes nothing of its own (the only removals are Python's
+  tempfile probe, one test file per process in TMPDIR); `--keep` skips the final cleanup of a whole
+  run (section 0.8.3 still removes two of its fixture files). A registry that cannot be written
+  now says the other names were not kept (QA, second round).
+
 ## 0.9.0 — 2026-10-11
 
 **A session gets its number when it signs in, not when it wraps.** Two chats of one agent

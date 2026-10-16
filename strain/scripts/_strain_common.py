@@ -25,6 +25,9 @@ STATE SCHEMA (one JSON object per session file)
     updated       ISO timestamp of the last write
     wrappedAt     ts of this session's last wrap stamp (strain-wrap.sh), 0.7.0
     wrapTick      the tick count at that stamp -- work after it makes the stamp stale
+    wrapStartedAt 0.10.0: ts of this session's wrap START (strain-wrap.sh --start); --cancel removes it
+    wrapStartTick 0.10.0: the tick count at that start
+    signedAs      0.10.0: the name typed at the sign, when it resolved to the agent's one name (--aka)
     ctx           context measurement, when the host exposes one (see _strain_context.py);
                   0.8.0: carries `source`, `limitSource` (where the window came from) and,
                   when it is not a usable number, `kind` + `why`
@@ -528,10 +531,11 @@ def load_ledgers(sdir):
     return d if isinstance(d, dict) else {}
 
 
-def save_ledgers(sdir, agent, ledger):
+def save_ledgers(sdir, agent, ledger, aka=None):
     """Upsert one agent's row, flock-guarded, refusing to rewrite an EXISTING but
     unreadable registry (a bad read must not evaporate everyone else's rows --
-    the same discipline as touch_index)."""
+    the same discipline as touch_index). 0.10.0: the row keeps the agent's other names
+    (`aka`) across signs and adds the new ones; an empty ledger never replaces a known one."""
     try:
         import fcntl
         ip = ledgers_registry_path(sdir)
@@ -542,7 +546,12 @@ def save_ledgers(sdir, agent, ledger):
             reg = load(ip)
             if existed and not reg:
                 return False
-            reg[str(agent)] = {"ledger": str(ledger), "ts": now_iso()}
+            old = reg.get(str(agent)) if isinstance(reg.get(str(agent)), dict) else {}
+            ent = {"ledger": str(ledger or old.get("ledger") or ""), "ts": now_iso()}
+            names = merge_names(old.get("aka") or [], aka or [])
+            if names:
+                ent["aka"] = names
+            reg[str(agent)] = ent
             return save(ip, reg)
         finally:
             try:
@@ -683,6 +692,119 @@ def ledger_sign(path, row, cont=None, seed=None):
         else:
             why = "the append failed (lock or write error) on %s" % path
         return None, "failed", ledger_rows(path), why
+
+
+# ---- 0.10.0: an agent's names ---------------------------------------------------------
+# The name tag knows the user's other names for an agent -- 小猎 is Ori is
+# Orion. An agent has ONE name (the book's and the registry's key); its other names resolve to
+# it at every sign and wrap, so the number, the book and the previous-session report follow one chain.
+# Like git's .mailmap: the one name decides, the typed one is kept beside it.
+
+def _fold(s):
+    return str(s or "").strip().casefold()
+
+
+def merge_names(*lists):
+    """The names of several lists, first spelling kept, each once ignoring case. Pure."""
+    out, seen = [], set()
+    for names in lists:
+        for n in names or []:
+            n = str(n or "").strip()
+            if n and _fold(n) not in seen:
+                seen.add(_fold(n))
+                out.append(n)
+    return out
+
+
+def names_of(registry, rows):
+    """{agent: [other names]} from the registry's `aka` lists and the book's `names` rows. Pure."""
+    out = {}
+    for agent, ent in (registry or {}).items():
+        if isinstance(ent, dict):
+            out[str(agent)] = merge_names(out.get(str(agent)), ent.get("aka") or [])
+    for r in rows or []:
+        if r.get("type") == "names" and r.get("agent"):
+            a = str(r["agent"])
+            out[a] = merge_names(out.get(a), r.get("aka") or [])
+    return out
+
+
+def canonical_name(name, registry, rows):
+    """(agent, why) for a typed name. Pure: the name, the registry, the book's rows in. An agent's own
+    name resolves to itself; another name to the one agent that lists it, ignoring case; a name two agents
+    list stays as typed and `why` says so -- never a guess; an unknown name stays as typed."""
+    name = str(name or "")
+    names = names_of(registry, rows)
+    if not name or name in names:
+        return name, ""
+    f = _fold(name)
+    # an agent's own name, ignoring case, before any other name (QA finding F1)
+    own = sorted(a for a in names if _fold(a) == f)
+    if len(own) == 1:
+        return own[0], ""
+    if own:
+        return name, ("the name %s matches the names of %s by case -- signed as %s; sign with the exact name"
+                      % (name, " and ".join(own), name))
+    owners = sorted(a for a, other in names.items() if f in {_fold(x) for x in other})
+    if len(owners) == 1:
+        return owners[0], ""
+    if owners:
+        return name, ("the name %s is listed for %s -- signed as %s; keep it for one of them"
+                      % (name, " and ".join(owners), name))
+    return name, ""
+
+
+def name_refusals(agent, aka, registry, rows):
+    """(kept, refused) for the other names `agent` declares: refused [(name, why)] -- another agent's
+    own name, or a name another agent already lists. Pure."""
+    names = names_of(registry, rows)
+    kept, refused = [], []
+    for n in aka or []:
+        n = str(n or "").strip()
+        if not n or _fold(n) == _fold(agent):
+            continue
+        own = sorted(a for a in names if a != str(agent) and _fold(a) == _fold(n))
+        if own:
+            refused.append((n, "it is the name of %s" % own[0]))
+            continue
+        other = sorted(a for a, xs in names.items() if a != str(agent) and _fold(n) in {_fold(x) for x in xs})
+        if other:
+            refused.append((n, "%s already has it" % other[0]))
+            continue
+        kept.append(n)
+    return kept, refused
+
+
+def declare_names(sdir, agent, ledger, aka, rows):
+    """0.10.0 (QA finding F3): the claim check and the save under ONE registry lock, so two
+    agents cannot both take a free name. Checks `aka` against the registry as it is on disk at the save (and
+    the book's rows), keeps the agent's names and ledger, adds what is free -> (kept, refused, ok)."""
+    try:
+        import fcntl
+        ip = ledgers_registry_path(sdir)
+        lock = open(ip + ".lock", "w")
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            existed = os.path.isfile(ip)
+            reg = load(ip)
+            if existed and not reg:
+                return [], [], False
+            kept, refused = name_refusals(agent, aka, reg, rows)
+            old = reg.get(str(agent)) if isinstance(reg.get(str(agent)), dict) else {}
+            ent = {"ledger": str(ledger or old.get("ledger") or ""), "ts": now_iso()}
+            names = merge_names(old.get("aka") or [], kept)
+            if names:
+                ent["aka"] = names
+            reg[str(agent)] = ent
+            return kept, refused, save(ip, reg)
+        finally:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+            except Exception:
+                pass
+            lock.close()
+    except Exception:
+        return [], [], False
 
 
 # ---- 0.6.0: the context FEED DOOR -----------------------------------------------------

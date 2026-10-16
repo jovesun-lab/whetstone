@@ -380,6 +380,35 @@ finished reports, cannot see a session still running — two chats got one numbe
   records `"continues"`, and it is not counted as a clash.
 - **Two sessions on one number** in a book are named at the sign, in plain words.
 
+### Other names (0.10.0)
+
+People call an agent by more than one name — Orion, Ori, 小猎. Without help, a sign
+under a nickname starts a separate chain: no book, no number, no previous-session report.
+Declare the other names once, with the agent's one name:
+
+```
+bash <strain>/scripts/strain-sign.sh --agent Orion --aka Ori --aka 小猎
+```
+
+They are kept in the registry (`ledgers.json`, `aka`) and once in the book (a `names` row),
+and every later sign resolves them: `strain-sign.sh --agent 小猎` signs as Orion —
+the same book, the next number, the same previous-session report — and the receipt shows
+both names: `Strain · Owner: Orion (signed as 小猎) · S3 — signed · booked`. The
+`boot-sign` row carries the agent's name in `agent` and the typed one in `as`. Names match
+ignoring case. A name that is another agent's own name, or already another agent's other
+name, is refused with the reason and not kept. A name two agents claim (hand-edited files)
+signs as typed, with a warning — strain never guesses. A wrap under another name books the
+agent's one name. No command removes another name yet: edit `ledgers.json` and the book.
+
+### A wrap's start (0.10.0)
+
+A wrap takes time. `strain-wrap.sh --start` marks its first step: `wrapStartedAt` (and
+`wrapStartTick`) in the session's state and a `wrap-start` row in the book, so a board can
+show "wrapping" from that moment instead of guessing from the fill. `strain-wrap.sh --cancel`
+calls a started wrap off (the user says go on): it removes the start and books a
+`wrap-cancel` row; with no start it writes nothing and exits 2. The stamp itself
+(`strain-wrap.sh`) is unchanged and keeps the start as history; `--status` shows both.
+
 ### Signing from a bare terminal
 
 The sign does not have to come from inside the agent's own shell. Some sessions
@@ -473,7 +502,10 @@ the command failed in the agent's own shell.)
 | `strain-signal.sh <kind> --caught\|--escaped` | record a hard signal; escaped ones floor the tier, caught ones feed the pattern note |
 | `strain-signal.sh --list` | print this session's signal ledger |
 | `strain-wrap.sh --label "…" [--with-debt]` | stamp this session wrapped / handed off; resets nothing; books a `wrap` row when signed with a ledger |
-| `strain-wrap.sh --status` | show this session's wrap state |
+| `strain-wrap.sh --status` | show this session's wrap state (`wrappedAt`, `wrapStartedAt`) |
+| `strain-wrap.sh --start` | mark the wrap's first step: `wrapStartedAt`, a `wrap-start` row (0.10.0) |
+| `strain-wrap.sh --cancel` | call a started wrap off: the start is removed, a `wrap-cancel` row (0.10.0) |
+| `strain-sign.sh --agent <name> --aka <other> [--aka …]` | declare other names for the agent; later signs under them resolve to it (0.10.0) |
 | `strain-sign.sh [--agent <name>] [--ledger <path>]` | declare who works this session (with no `--agent`: `<host> · <project folder>`); with a ledger, book boot-sign/wrap rows and report the previous session of the same agent; the first sign prints the receipt |
 | `strain-sign.sh --receipt` | repeat the user's sentence (stdout) and the agent's details (stderr), including "signed as <name>" or "not signed" |
 | `strain-sign.sh --instructions` | print the block for the agent's instruction file, and say where this host's files are and whether the block is in them |
