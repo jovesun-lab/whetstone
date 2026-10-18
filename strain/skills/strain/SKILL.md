@@ -137,13 +137,18 @@ your records and the hooks' counts end up in two different folders.
 
 ## At the wrap
 
-1. Write your handoff (strain does not; see *Throughline* below).
-2. Check permission again: `strain-sign.sh --receipt`. If it says "this shell cannot
+1. Mark the start: `strain-wrap.sh --start` — the wrap's first step, so a board can show
+   "wrapping" from now (README, *A wrap's start*). The user says go on →
+   `strain-wrap.sh --cancel`. If it says "this shell cannot write" or "not signed", go on —
+   step 3 asks.
+2. Write your handoff (strain does not; see *Throughline* below).
+3. Check permission again: `strain-sign.sh --receipt`. If it says "this shell cannot
    write" or "not signed", ask the user as in *At the start of a session*, step 2.
-3. Allowed: stamp the wrap: `strain-wrap.sh --label "<what was handed off>"` (add
-   `--with-debt` if you leave known loose ends). Still refused: no stamp — report the
-   counts only.
-4. If you keep working after the stamp, run it again at the next handoff — the tick says
+4. Allowed: sign if the session is not signed yet, mark the start if step 1 could not,
+   then stamp the wrap: `strain-wrap.sh --label "<what was handed off>"` (add
+   `--with-debt` if you leave known loose ends). Still refused: no sign, no mark, no stamp —
+   report the counts only.
+5. If you keep working after the stamp, run it again at the next handoff — the tick says
    "N calls since the wrap" until you do.
 
 A stamp means **this session wrapped / handed off** — not "the work is right" (that is

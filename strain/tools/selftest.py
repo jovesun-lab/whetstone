@@ -1672,6 +1672,22 @@ def section_0110(tmp):
     check("0.11.0 B7: --status shows the backups and the lines passed",
           r == 0 and stat.get("backups") == 2 and bool(stat.get("lastBackupAt")) and "crossed" in stat, o)
 
+    # ---- J: a sign with no ledger says how to join one ------------------------------------------
+    # A user's agent signed every chat for days with no session number: the receipt said "no ledger"
+    # at the end of the details line and nothing about what that costs or how to join one.
+    jdir = os.path.join(tmp, "j0110")
+    jbook = os.path.join(tmp, "j0110-book", "Log.strain")
+    os.makedirs(os.path.dirname(jbook), exist_ok=True)
+    jenv = {"STRAIN_STATE_DIR": jdir}
+    o0, e0, r0 = run("_strain_sign.py", None, ["--agent", "Vega", "--session", "j-0"], jenv)
+    check("0.11.0 J1: a sign with no ledger still signs, and says sessions are not numbered and how to join one",
+          r0 == 0 and "not numbered" in e0 and "--ledger" in e0, (r0, o0, e0))
+    o1, e1, r1 = run("_strain_sign.py", None, ["--agent", "Vega", "--session", "j-1", "--ledger", jbook], jenv)
+    check("0.11.0 J2: a sign with a ledger says nothing of the kind",
+          r1 == 0 and "not numbered" not in (o1 + e1), (r1, o1, e1))
+    check("0.11.0 J3: the hint is for the agent (stderr); the user's sentence on stdout is unchanged",
+          "not numbered" not in o0 and "--ledger" not in o0, o0)
+
 
 def _arg(flag):
     return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv and sys.argv.index(flag) + 1 < len(sys.argv) else None

@@ -258,6 +258,11 @@ def main(argv):
                      % (sid[:12], how,
                         (" · ledger %s (via %s)" % (ledger, ledger_how))
                         if ledger else " · no ledger"))
+    if not ledger:
+        # 0.11.0: "no ledger" alone said nothing about what it costs -- an agent signed every chat for days
+        # with no session number. One line for the agent; the user's sentence on stdout is unchanged.
+        sys.stderr.write("no ledger: this session is counted but not numbered -- to number sessions, "
+                         "sign with --ledger <the project's ledger file> (it is remembered for this agent)\n")
     return 0
 
 

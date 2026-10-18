@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.11.0 — unreleased
+## 0.11.0 — 2026-10-18
 
 **Your own words at a fill level, said once when a session crosses it; and a backup mark.**
 
@@ -13,6 +13,17 @@
   not a wrap, not a signal; refused with `--start`, `--cancel` or `--with-debt`. `--status`
   shows backups, the lines passed and the peak fill.
 - The session's state keeps `peakPct` / `peakAt`, the highest trusted fill so far.
+- **The wrap steps start with the mark.** Both skills (`start`, `strain`) now open *At the
+  wrap* with `strain-wrap.sh --start` (and `--cancel` when the user says go on): the 0.10.0
+  mark was there, but no step called it, so a board could not show "wrapping" until the stamp.
+- **A sign with no ledger says what that means.** The agent's receipt adds one line: the
+  session is counted but not numbered, and `--ledger <file>` joins one (remembered for the
+  agent). Before, "no ledger" closed the details line and an agent could sign for days with
+  no session number. The user's sentence is unchanged; signing never depends on a ledger.
+- Selftest section 0.11.0: three more checks for that line. J1 (the hint is there) was red
+  before the code; J2 (no hint with a ledger) and J3 (nothing on stdout) guard the other
+  cases. Three deliberate breaks on a copy, each red: the words removed (J1), the hint forced
+  with a ledger (J2), the hint sent to stdout (J1, J3).
 - Nothing in the lines file can stop the counter: a failure anywhere in the lines step
   becomes the once-per-session note, and the tick still saves and fires. Two `at` values
   that differ are two lines, however close; the peak is compared on the reading itself.

@@ -53,18 +53,22 @@ state folder and the plugin's path.
 
 ## At the wrap
 
-1. Write your handoff (strain does not). If your sessions are numbered, take this session's
+1. **Mark the start:** `strain-wrap.sh --start` (0.10.0) — the wrap's first step, so a board
+   or a status line can show "wrapping" from now instead of guessing from the fill. If the
+   user says go on, `strain-wrap.sh --cancel`. If it says "this shell cannot write" or
+   "not signed", go on — step 3 asks.
+2. Write your handoff (strain does not). If your sessions are numbered, take this session's
    number from the sign receipt (`Owner: <name> · S<n>`, 0.9.0) — never count it from
    earlier handoffs or reports: a session still running elsewhere has none yet.
-2. **Check again:** `strain-sign.sh --receipt`. If it says "this shell cannot write" or
-   "not signed", ask the user for permission as in steps 3–4 above — keep the prompt open
+3. **Check again:** `strain-sign.sh --receipt`. If it says "this shell cannot write" or
+   "not signed", ask the user for permission as in *At the start*, steps 3–4 — keep the prompt open
    until they answer, do not end your turn.
-3. **Allowed:** sign if the session is not signed yet, then stamp the wrap:
-   `strain-wrap.sh --label "<what was handed off>"` (add `--with-debt` for known loose
-   ends). Tell the user the line it prints.
-4. **Still refused:** no sign, no stamp. Report the counts only (the tier, the tool calls,
+4. **Allowed:** sign if the session is not signed yet (and mark the start if step 1 could
+   not), then stamp the wrap: `strain-wrap.sh --label "<what was handed off>"` (add
+   `--with-debt` for known loose ends). Tell the user the line it prints.
+5. **Still refused:** no sign, no mark, no stamp. Report the counts only (the tier, the tool calls,
    the errors that reached the user).
-5. The next session starts again from *At the start*, step 1.
+6. The next session starts again from *At the start*, step 1.
 
 ## Sub-agents and unattended runs
 
