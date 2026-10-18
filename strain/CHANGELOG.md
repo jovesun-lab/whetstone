@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.11.0 — unreleased
+
+**Your own words at a fill level, said once when a session crosses it; and a backup mark.**
+
+- **A lines file** (`STRAIN_LINES`, else `lines.json` in strain's folder): each line is said
+  once per session, on the tool call whose fill crosses it, as context for the agent; a jump
+  past two lines says only the higher one; a fall and a rise say nothing new. A line may name
+  a `mark` (`backup`, `wrap-start`), and strain adds the exact command that records it. No
+  file: nothing changes. A file that is there but unusable is not used and is said once.
+- **`strain-wrap.sh --backup`** marks a mid-session backup (`backups`, a `backup` book row) —
+  not a wrap, not a signal; refused with `--start`, `--cancel` or `--with-debt`. `--status`
+  shows backups, the lines passed and the peak fill.
+- The session's state keeps `peakPct` / `peakAt`, the highest trusted fill so far.
+- Nothing in the lines file can stop the counter: a failure anywhere in the lines step
+  becomes the once-per-session note, and the tick still saves and fires. Two `at` values
+  that differ are two lines, however close; the peak is compared on the reading itself.
+- Selftest section 0.11.0: 67 checks, written first and seen red on their assertions; 27
+  deliberate breaks on a copy, each red. One check was added after a real run found the
+  user's words and strain's step running together; nine after the first QA round found a
+  `mark` of `[]` or `{}` stopping the tick silently, close thresholds sharing one key, and a
+  rounded peak.
+
 ## 0.10.0 — 2026-10-15
 
 **A board can see a wrap begin, and an agent keeps one chain under all its names.**

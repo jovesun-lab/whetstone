@@ -7,6 +7,7 @@
     strain-wrap.sh --status             show this session's wrap state
     strain-wrap.sh --start              0.10.0: the wrap's first step -- a board can show the wrap as started
     strain-wrap.sh --cancel             0.10.0: the wrap is called off (the user says go on) -- the start is removed
+    strain-wrap.sh --backup             0.11.0: a mid-session backup is taken -- not a wrap; --label names it
 
 WHAT A STAMP MEANS: "this session wrapped / handed off" -- NOT "the work is right" (that
 is your project's own check and your own judgement). Until 0.6.0 the stamp was a shared
@@ -22,7 +23,8 @@ import argparse, json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _strain_common import (state_dir, session_path, load, save, now_iso, resolve_sid,
                             resolve_for_write, ledger_append_why, signals_of, state_lock,
-                            why_unsaved, write_hint, canonical_name, load_ledgers, ledger_rows)
+                            why_unsaved, write_hint, canonical_name, load_ledgers, ledger_rows,
+                            trusted_fill)
 
 
 def main(argv):
@@ -35,9 +37,14 @@ def main(argv):
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--start", action="store_true")    # 0.10.0: mark the wrap's start
     ap.add_argument("--cancel", action="store_true")   # 0.10.0: call a started wrap off (the user says go on)
+    ap.add_argument("--backup", action="store_true")   # 0.11.0: a mid-session backup -- never a wrap
     args, _ = ap.parse_known_args(argv)
     if args.start and args.cancel:
         sys.stderr.write("--start and --cancel together: give one -- nothing written\n")
+        return 2
+    if args.backup and (args.start or args.cancel or args.with_debt):
+        sys.stderr.write("--backup is not a wrap: give it without --start, --cancel or --with-debt"
+                         " -- nothing written\n")
         return 2
 
     sdir = state_dir(args.state_dir)
@@ -57,12 +64,19 @@ def main(argv):
     path = session_path(sdir, sid)
     with state_lock(path):
         st = load(path)
+        backups = st.get("backups") if isinstance(st.get("backups"), list) else []
         if args.status:
             sys.stdout.write(json.dumps({"session": sid, "agent": st.get("agent") or None,
                                          "wrappedAt": st.get("wrappedAt") or None,
                                          "wrapStartedAt": st.get("wrapStartedAt") or None,
                                          "wrapTick": st.get("wrapTick"),
-                                         "tick": int(st.get("tick", 0) or 0)}, indent=1) + "\n")
+                                         "tick": int(st.get("tick", 0) or 0),
+                                         # 0.11.0: the backups taken and the user's lines passed
+                                         "backups": len(backups),
+                                         "lastBackupAt": (backups[-1].get("ts") if backups
+                                                          and isinstance(backups[-1], dict) else None),
+                                         "crossed": st.get("crossed") or {},
+                                         "peakPct": st.get("peakPct")}, indent=1) + "\n")
             return 0
         agent = args.agent or os.environ.get("STRAIN_AGENT") or str(st.get("agent") or "")
         if args.agent or os.environ.get("STRAIN_AGENT"):
@@ -72,7 +86,15 @@ def main(argv):
         ts = now_iso()
         tick = int(st.get("tick", 0) or 0)
         verdict = "WRAPPED-WITH-DEBT" if args.with_debt else "WRAPPED"
-        if args.cancel:
+        fill = trusted_fill(st.get("ctx"))
+        if args.backup:
+            mark = {"ts": ts, "tick": tick}
+            if fill is not None:
+                mark["pct"] = round(fill, 1)
+            if args.label:
+                mark["label"] = args.label
+            st["backups"] = backups + [mark]
+        elif args.cancel:
             if not st.get("wrapStartedAt"):
                 sys.stderr.write("no wrap started in this session -- nothing to call off; nothing written\n")
                 return 2
@@ -93,7 +115,14 @@ def main(argv):
     booked = ""
     if ledger:
         sig = signals_of(st)
-        if args.start or args.cancel:
+        if args.backup:
+            row = {"type": "backup", "ts": ts, "session": sid, "agent": agent,
+                   "tier": str(st.get("last", "") or ""), "tick": tick}
+            if fill is not None:
+                row["pct"] = round(fill, 1)
+            if args.label:
+                row["label"] = args.label
+        elif args.start or args.cancel:
             row = {"type": "wrap-start" if args.start else "wrap-cancel", "ts": ts, "session": sid,
                    "agent": agent, "tier": str(st.get("last", "") or ""), "tick": tick}
         else:
@@ -110,7 +139,8 @@ def main(argv):
     # stderr carries the paths for the agent.
     extra = (" · " + args.label if args.label else "") + \
         (" · with known loose ends" if args.with_debt else "")
-    what = "wrap started" if args.start else "wrap called off" if args.cancel else "wrapped"
+    what = ("backup marked" if args.backup else "wrap started" if args.start
+            else "wrap called off" if args.cancel else "wrapped")
     if args.start or args.cancel:
         extra = ""
     if agent:

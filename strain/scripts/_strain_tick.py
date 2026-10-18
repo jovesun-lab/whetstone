@@ -6,7 +6,8 @@ agent to run the strain check now. The host inserts that directive next to the t
 result, which is the entire point: a check the agent is merely asked to remember is
 crowded out by the work, and decays to silence. The one that fires from outside does not.
 
-Emits nothing on the other N-1 calls.
+Emits nothing on the other N-1 calls -- except, 0.11.0, a line from the user's own lines file
+(_strain_lines.py) on the call whose fill crosses it: said once, at once, never held to the Nth call.
 
 Mechanism: PostToolUse honours `hookSpecificOutput.additionalContext`, which the host
 wraps in a reminder and shows to the agent. Plain stdout would not work here -- for
@@ -22,6 +23,7 @@ from _strain_common import (TIERS, state_dir, session_path, load, save, blank, n
                             settle_window, k_tokens, why_unsaved, unsaved_marker,
                             user_messages_on, DESCRIBE_STEP, is_subagent_call)
 import _strain_context as ctxmod
+import _strain_lines as linesmod
 
 DEFAULT_N = 10          # tool calls between ticks
 
@@ -312,6 +314,46 @@ def wrap_line(st):
     return line + "."
 
 
+def crossing_line(st, fill, sdir, environ):
+    """0.11.0: the user's line this call crosses, as text for the agent, or "". Mutates st:
+    the peak fill, the lines passed (`crossed`, with when, at what fill and call, and whether
+    the line was said or jumped), and `_linesProblem` for the next regular tick to say.
+    Nothing in the lines step may cost the tick its save or its directive: any failure in it
+    becomes that once-per-session note."""
+    if fill is not None and fill > float(st.get("peakPct", -1) or -1):
+        st["peakPct"] = float(fill)       # compared as read -- a rounded copy let a lower reading move it
+        st["peakAt"] = now_iso()
+    path = "lines file"
+    try:
+        path = linesmod.lines_path(sdir, environ)
+        return _crossing_text(st, fill, sdir, path)
+    except Exception as ex:
+        st["_linesProblem"] = (path, "the lines step failed (%s)" % ex.__class__.__name__)
+        return ""
+
+
+def _crossing_text(st, fill, sdir, path):
+    lines, problem = linesmod.load_lines(path)
+    if problem:
+        st["_linesProblem"] = (path, problem)
+        return ""
+    crossed = st.get("crossed") if isinstance(st.get("crossed"), dict) else {}
+    line, passed = linesmod.due_line(lines, fill, crossed)
+    if not passed:
+        return ""
+    ts = now_iso()
+    for at in passed:
+        crossed[linesmod.key(at)] = {"ts": ts, "pct": round(fill, 1), "tick": int(st.get("tick", 0) or 0),
+                                     "said": at == line["at"]}
+    st["crossed"] = crossed
+    text = ("\U0001FA7A STRAIN LINE (fill %.1f%% crossed %s%%; from the lines file %s): %s"
+            % (fill, linesmod.key(line["at"]), path, line["say"]))
+    if line.get("mark"):
+        text += (" -- once it is done, record it: `%s`."
+                 % act_command("strain-wrap.sh", st, sdir, linesmod.MARKS[line["mark"]]))
+    return text
+
+
 def build_directive(n, st, ctx, substrate="", sdir=""):
     bits = []
     ctx_line = describe_ctx(ctx)
@@ -345,6 +387,12 @@ def build_directive(n, st, ctx, substrate="", sdir=""):
                     " default name unless the user gave you one: add --agent '<name>'); %s;"
                     " then tell the user the one sentence it prints." % (
                         act_command("strain-sign.sh", st, sdir, "").rstrip(), DESCRIBE_STEP))
+    problem = st.pop("_linesProblem", None)
+    if problem and not st.get("linesNoted"):
+        # 0.11.0: a lines file that is there but unusable is said once per session, never silent
+        st["linesNoted"] = now_iso()
+        bits.append(" NOTE: the lines file %s is not used (%s) -- no line from it is printed"
+                    " until it is fixed." % (problem[0], problem[1]))
     if st.pop("_legacyNote", None):
         bits.append(" NOTE: an old calibration record (calibration.json) has no model, so it"
                     " rules no session -- re-record the window per product and model:"
@@ -487,6 +535,8 @@ def main():
         log_model(sdir, sid, "observed", observed, cwd)
 
     st["updated"] = now_iso()
+    # 0.11.0: checked on EVERY call -- a line is said on the call that crosses it
+    line_text = crossing_line(st, trusted_fill(ctx), sdir, os.environ)
     # Build the directive BEFORE saving -- build_directive dedups the recovery
     # directive by mutating st (recovery_announced), and that mutation must persist.
     fire = N > 0 and st["tick"] % N == 0
@@ -495,7 +545,7 @@ def main():
         st.pop("legacyNoted", None)        # not said yet -- say it at the next firing tick
     st.pop("_legacyNote", None)
     shown = user_message(st, ctx, path, fire)
-    for k in ("_proposed", "_kind", "_why"):
+    for k in ("_proposed", "_kind", "_why", "_linesProblem"):
         st.pop(k, None)
     st["hookSavedAt"] = st["updated"]       # 0.8.1: the HOOK's own save, for the receipt
     saved = save(path, st)
@@ -526,6 +576,10 @@ def main():
         return 0
 
     touch_index(sdir, sid, cwd)
+    if line_text and not fire:
+        sys.stdout.write(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PostToolUse", "additionalContext": line_text}}))
+        return 0
     if fire:
         if os.path.exists(marker):
             try:
@@ -538,7 +592,7 @@ def main():
                           " above miss them." % (gap or "reason not recorded"))
         out = {"hookSpecificOutput": {
             "hookEventName": "PostToolUse",
-            "additionalContext": directive,
+            "additionalContext": (line_text + " " + directive) if line_text else directive,
         }}
         if shown:
             out["systemMessage"] = shown

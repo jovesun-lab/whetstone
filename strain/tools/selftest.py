@@ -4,7 +4,7 @@ the JSON payload a host would send, in a throwaway state directory.
 
     python3 tools/selftest.py            run everything
     python3 tools/selftest.py -v         print each check
-    python3 tools/selftest.py --only 0.10.0 --tmp <folder>
+    python3 tools/selftest.py --only 0.10.0 --tmp <folder>   (or --only 0.11.0)
                                          0.10.0's section alone, in a new folder under <folder>; it deletes
                                          nothing and prints the folder (QA, second round)
     python3 tools/selftest.py --keep     the whole run without the final cleanup (section 0.8.3 still
@@ -1340,6 +1340,339 @@ def section_0100(tmp):
           r8 == 0 and "not kept" in e8 and "Owner: Ana · S1 — signed · booked" in o8, (o8, e8))
 
 
+def section_0110(tmp):
+    """0.11.0: a line from an optional lines file, printed once when the fill crosses it, and a backup mark
+    (strain-wrap.sh --backup). Asked for so that an agent is told at a fill line by the program, not by a
+    person; the words are the user's own file, strain only prints them. Written first, before the code.
+    """
+    import importlib
+    if SCRIPTS not in sys.path:
+        sys.path.insert(0, SCRIPTS)
+    try:
+        lines = importlib.import_module("_strain_lines")
+    except Exception:
+        lines = None
+    check("0.11.0 L0: the lines module exists (_strain_lines.py)", lines is not None)
+
+    SAY50 = "fifty: save a checkpoint"
+    SAY70 = "seventy: begin the hand-off"
+    GOOD = {"strain_lines": 1, "lines": [{"at": 70, "say": SAY70, "mark": "wrap-start"},
+                                         {"at": 50, "say": SAY50, "mark": "backup"}]}
+    LIM = {"STRAIN_CONTEXT_LIMIT": "100000"}
+
+    def write(path, obj):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(obj if isinstance(obj, str) else json.dumps(obj))
+        return path
+
+    def fill(path, tokens):
+        make_transcript(path, [(2, 10000, 0), (2, tokens, 0)])
+        return path
+
+    def said(out):
+        try:
+            return json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        except Exception:
+            return ""
+
+    def rows_of(path):
+        try:
+            with open(path) as f:
+                return [json.loads(l) for l in f if l.strip()]
+        except Exception:
+            return []
+
+    def as_list(x):          # a wrong answer must FAIL a check, not abort the section
+        return list(x) if isinstance(x, (list, tuple)) else ["<not a list: %r>" % (x,)]
+
+    def at_of(x):
+        return x.get("at") if isinstance(x, dict) else None
+
+    def pair(r):
+        return tuple(r) if isinstance(r, (list, tuple)) and len(r) == 2 else (None, None)
+
+    def load(path):
+        try:
+            return pair(lines.load_lines(path))
+        except Exception as ex:
+            return ("<raised %s>" % ex.__class__.__name__, None)
+
+    # ---- L · the pure module -------------------------------------------------------------
+    d = os.path.join(tmp, "l0110")
+    os.makedirs(d, exist_ok=True)
+    good = write(os.path.join(d, "good.json"), GOOD)
+    if lines is not None:
+        check("0.11.0 L1: STRAIN_LINES names the file",
+              lines.lines_path(d, {"STRAIN_LINES": "/x/y.json"}) == "/x/y.json",
+              lines.lines_path(d, {"STRAIN_LINES": "/x/y.json"}))
+        check("0.11.0 L2: else the state folder's lines.json",
+              lines.lines_path(d, {}) == os.path.join(d, "lines.json"), lines.lines_path(d, {}))
+        got, why = pair(lines.load_lines(os.path.join(d, "absent.json")))
+        check("0.11.0 L3: no file -> no lines and nothing to say", got == [] and why is None, (got, why))
+        got, why = pair(lines.load_lines(good))
+        gl = [g for g in as_list(got) if isinstance(g, dict)]
+        check("0.11.0 L4: a good file -> its lines, lowest first, with their marks",
+              why is None and [at_of(g) for g in gl] == [50, 70] and gl[0].get("say") == SAY50
+              and gl[0].get("mark") == "backup" and gl[1].get("mark") == "wrap-start", (got, why))
+        one = {"at": 50, "say": SAY50}
+        bad = [("not JSON", "{"),
+               ("not an object", [1]),
+               ("no version", {"lines": [one]}),
+               ("another version", {"strain_lines": 2, "lines": [one]}),
+               ("no lines", {"strain_lines": 1}),
+               ("an empty list", {"strain_lines": 1, "lines": []}),
+               ("at 0", {"strain_lines": 1, "lines": [dict(one, at=0)]}),
+               ("at over 100", {"strain_lines": 1, "lines": [dict(one, at=101)]}),
+               ("at as text", {"strain_lines": 1, "lines": [dict(one, at="50")]}),
+               ("at as true", {"strain_lines": 1, "lines": [dict(one, at=True)]}),
+               ("the same at twice", {"strain_lines": 1, "lines": [one, dict(one, say="again")]}),
+               ("an empty say", {"strain_lines": 1, "lines": [dict(one, say="  ")]}),
+               ("a say over two lines", {"strain_lines": 1, "lines": [dict(one, say="a\nb")]}),
+               ("a say over 300 characters", {"strain_lines": 1, "lines": [dict(one, say="x" * 301)]}),
+               ("a say that is not text", {"strain_lines": 1, "lines": [dict(one, say=5)]}),
+               ("an unknown mark", {"strain_lines": 1, "lines": [dict(one, mark="nap")]}),
+               ("a mark that is a list (QA round 1, F1)", {"strain_lines": 1, "lines": [dict(one, mark=[])]}),
+               ("a mark that is an object (QA round 1, F1)", {"strain_lines": 1, "lines": [dict(one, mark={})]}),
+               ("a line that is not an object", {"strain_lines": 1, "lines": ["50"]})]
+        for i, (name, obj) in enumerate(bad):
+            got, why = load(write(os.path.join(d, "bad-%02d.json" % i), obj))
+            check("0.11.0 L5: an unusable file (%s) -> no lines, and a reason" % name,
+                  got == [] and isinstance(why, str) and bool(why.strip()), (got, why))
+        link = os.path.join(d, "dangling.json")
+        os.symlink(os.path.join(d, "gone.json"), link)
+        got, why = pair(lines.load_lines(link))
+        check("0.11.0 L6: a link to a file that is gone is set up but unreadable -> no lines, and a reason",
+              got == [] and isinstance(why, str) and bool(why.strip()), (got, why))
+        # the lines as the module should return them -- built here, so these checks do not ride on L4
+        L = [{"at": 50, "say": SAY50, "mark": "backup"}, {"at": 70, "say": SAY70, "mark": "wrap-start"}]
+        due = lines.due_line
+        r = pair(due(L, 49.9, {}))
+        check("0.11.0 L7: below every line -> nothing due", r[0] is None and as_list(r[1]) == [], r)
+        r = pair(due(L, 50.0, {}))
+        check("0.11.0 L8: at the line -> that line, and it is now passed",
+              at_of(r[0]) == 50 and as_list(r[1]) == [50], r)
+        r = pair(due(L, 55.0, {"50": {}}))
+        check("0.11.0 L9: a passed line is not due again", r[0] is None and as_list(r[1]) == [], r)
+        r = pair(due(L, 70.5, {"50": {}}))
+        check("0.11.0 L10: the next line when its turn comes", at_of(r[0]) == 70 and as_list(r[1]) == [70], r)
+        r = pair(due(L, 75.0, {}))
+        check("0.11.0 L11: a jump past both -> the highest line only, both passed",
+              at_of(r[0]) == 70 and sorted(as_list(r[1]), key=str) == [50, 70], r)
+        r = pair(due(L, None, {}))
+        check("0.11.0 L12: no trusted fill -> nothing due, nothing passed", r[0] is None and as_list(r[1]) == [], r)
+        # QA round 1, F2: a key keeps distinct values distinct; the same value written two ways is one key
+        near = {"strain_lines": 1, "lines": [{"at": 50, "say": SAY50}, {"at": 50.00001, "say": "a hair later"}]}
+        got, why = load(write(os.path.join(d, "near.json"), near))
+        check("0.11.0 L13: 50 and 50.00001 are two lines (QA round 1, F2)",
+              why is None and len(as_list(got)) == 2, (got, why))
+        ks = [lines.key(50), lines.key(50.0), lines.key(52.5), lines.key(50.00001), lines.key(50.0000001)]
+        check("0.11.0 L14: keys - 50 and 50.0 are one, 50.00001 and 50.0000001 their own",
+              ks[0] == ks[1] == "50" and ks[2] == "52.5" and len(set(ks)) == 4, ks)
+        NL = [{"at": 50, "say": SAY50}, {"at": 50.00001, "say": "a hair later"}]
+        r1 = pair(due(NL, 50.000005, {lines.key(50): {}}))
+        r2 = pair(due(NL, 50.00002, {lines.key(50): {}}))
+        check("0.11.0 L15: the nearer line waits for its own crossing",
+              r1[0] is None and at_of(r2[0]) == 50.00001, (r1, r2))
+
+    # ---- T · the hook, on Claude Code ------------------------------------------------------
+    sdir = os.path.join(tmp, "t0110")
+    write(os.path.join(sdir, "lines.json"), GOOD)          # the default place
+    tr = os.path.join(tmp, "t0110-a.jsonl")
+    o1, _, _ = tick(sdir, "c-a", n=10, transcript=fill(tr, 40000), extra_env=LIM)
+    check("0.11.0 T1: below the line a quiet call stays quiet", o1 == "", o1[:300])
+    o2, _, _ = tick(sdir, "c-a", n=10, transcript=fill(tr, 52000), extra_env=LIM)
+    c2 = said(o2)
+    check("0.11.0 T2: the call that crosses prints the line at once, as context for the agent (not the 10th call)",
+          SAY50 in c2 and SAY70 not in c2 and '"hookEventName": "PostToolUse"' in o2, o2[:400])
+    check("0.11.0 T3: and the exact command that records its mark, for this session",
+          "strain-wrap.sh --backup" in c2 and "STRAIN_SESSION=c-a" in c2, c2[:400])
+    check("0.11.0 T3b: the user's words end before strain's step, even with no full stop (found in a real run)",
+          (SAY50 + " -- once it is done, record it: `") in c2, c2[:400])
+    check("0.11.0 T4: the user is not shown it (no systemMessage)", "systemMessage" not in o2, o2[:300])
+    o3, _, _ = tick(sdir, "c-a", n=10, transcript=fill(tr, 53000), extra_env=LIM)
+    check("0.11.0 T5: printed once", o3 == "", o3[:300])
+    st = state_of(sdir, "c-a")
+    cr = (st.get("crossed") or {}).get("50") or {}
+    check("0.11.0 T6: the session remembers the line: said, at which fill and call",
+          cr.get("said") is True and abs(float(cr.get("pct") or 0) - 52.0) < 0.1 and cr.get("tick") == 2
+          and bool(cr.get("ts")), st.get("crossed"))
+    o4, _, _ = tick(sdir, "c-a", n=10, transcript=fill(tr, 71000), extra_env=LIM)
+    c4 = said(o4)
+    check("0.11.0 T7: the 70 line, with the command that marks a wrap's start",
+          SAY70 in c4 and SAY50 not in c4 and "strain-wrap.sh --start" in c4, c4[:400])
+    tick(sdir, "c-a", n=10, transcript=fill(tr, 20000), extra_env=LIM)
+    st = state_of(sdir, "c-a")
+    check("0.11.0 T8: the peak fill is kept when the fill falls",
+          abs(float(st.get("peakPct") or 0) - 71.0) < 0.1 and bool(st.get("peakAt")), (st.get("peakPct"), st.get("peakAt")))
+    o5, _, _ = tick(sdir, "c-a", n=10, transcript=fill(tr, 72000), extra_env=LIM)
+    check("0.11.0 T9: a fall and a rise do not print again", o5 == "", o5[:300])
+
+    tr2 = os.path.join(tmp, "t0110-b.jsonl")
+    tick(sdir, "c-b", n=10, transcript=fill(tr2, 45000), extra_env=LIM)
+    o6, _, _ = tick(sdir, "c-b", n=10, transcript=fill(tr2, 75000), extra_env=LIM)
+    c6 = said(o6)
+    check("0.11.0 T10: a jump past both prints the 70 line only", SAY70 in c6 and SAY50 not in c6, c6[:400])
+    cr = state_of(sdir, "c-b").get("crossed") or {}
+    check("0.11.0 T11: the 50 line is remembered as jumped, the 70 line as said",
+          (cr.get("50") or {}).get("said") is False and (cr.get("70") or {}).get("said") is True, cr)
+
+    tr3 = os.path.join(tmp, "t0110-c.jsonl")
+    tick(sdir, "c-c", n=2, transcript=fill(tr3, 40000), extra_env=LIM)
+    o7, _, _ = tick(sdir, "c-c", n=2, transcript=fill(tr3, 52000), extra_env=LIM)
+    c7 = said(o7)
+    check("0.11.0 T12: on a regular tick the line comes first, then the tick",
+          SAY50 in c7 and "STRAIN TICK" in c7 and c7.find(SAY50) < c7.find("STRAIN TICK"), c7[:400])
+
+    sdir0 = os.path.join(tmp, "t0110-none")
+    tr4 = os.path.join(tmp, "t0110-d.jsonl")
+    tick(sdir0, "c-d", n=10, transcript=fill(tr4, 40000), extra_env=LIM)
+    o8, _, _ = tick(sdir0, "c-d", n=10, transcript=fill(tr4, 52000), extra_env=LIM)
+    o9, _, _ = tick(sdir0, "c-d", n=1, transcript=fill(tr4, 53000), extra_env=LIM)
+    check("0.11.0 T13: no lines file -> the crossing call is quiet and the tick names no line or file (as 0.10.0)",
+          o8 == "" and "STRAIN LINE" not in o9 and "lines file" not in o9 and "STRAIN TICK" in o9, (o8[:200], o9[:300]))
+
+    sdirb = os.path.join(tmp, "t0110-bad")
+    badp = write(os.path.join(sdirb, "lines.json"), "{")
+    tr5 = os.path.join(tmp, "t0110-e.jsonl")
+    tick(sdirb, "c-e", n=10, transcript=fill(tr5, 40000), extra_env=LIM)
+    oa, _, _ = tick(sdirb, "c-e", n=10, transcript=fill(tr5, 52000), extra_env=LIM)
+    ob, _, _ = tick(sdirb, "c-e", n=1, transcript=fill(tr5, 53000), extra_env=LIM)
+    oc, _, _ = tick(sdirb, "c-e", n=1, transcript=fill(tr5, 54000), extra_env=LIM)
+    check("0.11.0 T14: an unusable file prints no line, and the next regular tick says so, naming the file",
+          oa == "" and "lines file" in said(ob) and badp in said(ob) and "STRAIN LINE" not in said(ob), (oa[:200], said(ob)[:500]))
+    check("0.11.0 T15: ... once per session", "lines file" not in said(oc) and "STRAIN TICK" in said(oc), said(oc)[:300])
+
+    tr6 = fill(os.path.join(tmp, "t0110-f.jsonl"), 52000)
+    e = {"STRAIN_STATE_DIR": sdir}
+    e.update(LIM)
+    of, _, _ = run("_strain_tick.py", {"session_id": "c-f", "cwd": "/tmp/proj", "hook_event_name": "PostToolUse",
+                                       "transcript_path": tr6, "agent_id": "sub-1"}, ["--n", "10"], e)
+    check("0.11.0 T16: a sub-agent's call prints nothing and records nothing",
+          of == "" and not state_of(sdir, "c-f").get("crossed"), of[:200])
+
+    elsewhere = write(os.path.join(tmp, "t0110-elsewhere", "group.json"), GOOD)
+    sdire = os.path.join(tmp, "t0110-env")
+    tr7 = os.path.join(tmp, "t0110-g.jsonl")
+    env7 = dict(LIM, STRAIN_LINES=elsewhere)
+    tick(sdire, "c-g", n=10, transcript=fill(tr7, 40000), extra_env=env7)
+    og, _, _ = tick(sdire, "c-g", n=10, transcript=fill(tr7, 52000), extra_env=env7)
+    check("0.11.0 T17: STRAIN_LINES points at a file outside the state folder", SAY50 in said(og), og[:300])
+
+    sdirw = os.path.join(tmp, "t0110-ro")
+    write(os.path.join(sdirw, "lines.json"), GOOD)
+    tr8 = os.path.join(tmp, "t0110-h.jsonl")
+    tick(sdirw, "c-h", n=1000, transcript=fill(tr8, 40000), extra_env=LIM)
+    sess = os.path.join(sdirw, "sessions")
+    os.chmod(sess, 0o555)
+    os.chmod(os.path.join(sess, "c-h.json"), 0o444)
+    try:
+        oh, _, _ = tick(sdirw, "c-h", n=1000, transcript=fill(tr8, 52000), extra_env=LIM)
+    finally:
+        os.chmod(sess, 0o755)
+        os.chmod(os.path.join(sess, "c-h.json"), 0o644)
+    oi, _, _ = tick(sdirw, "c-h", n=1000, transcript=fill(tr8, 52500), extra_env=LIM)
+    check("0.11.0 T18: a reading that cannot be saved holds the line back; the next saved call prints it",
+          SAY50 not in oh and SAY50 in said(oi), (oh[:300], oi[:300]))
+
+    # QA round 1, F1: a mark of [] or {} must not cost the tick its save or its directive
+    for i, bad_mark in enumerate(([], {})):
+        sdm = os.path.join(tmp, "t0110-mark-%d" % i)
+        mp = write(os.path.join(sdm, "lines.json"), {"strain_lines": 1, "lines": [{"at": 50, "say": SAY50, "mark": bad_mark}]})
+        trm = os.path.join(tmp, "t0110-mark-%d.jsonl" % i)
+        q1, _, _ = tick(sdm, "c-m%d" % i, n=10, transcript=fill(trm, 52000), extra_env=LIM)
+        q2, _, _ = tick(sdm, "c-m%d" % i, n=1, transcript=fill(trm, 53000), extra_env=LIM)
+        stm = state_of(sdm, "c-m%d" % i)
+        check("0.11.0 T19: a mark of %s - the calls are still saved, the tick still comes, with the one note (QA round 1, F1)"
+              % json.dumps(bad_mark),
+              stm.get("tick") == 2 and q1 == "" and "STRAIN TICK" in said(q2) and "lines file" in said(q2) and mp in said(q2)
+              and "mark" in said(q2), (stm.get("tick"), q1[:200], said(q2)[:400]))
+
+    # QA round 1: any failure in the lines step becomes the note -- never a lost save (in-process, the step alone)
+    import importlib as _il
+    tickmod = _il.import_module("_strain_tick")
+    real = tickmod.linesmod.load_lines
+    def boom(path):
+        raise RuntimeError("test")
+    tickmod.linesmod.load_lines = boom
+    try:
+        stg = {"sid": "g-1", "tick": 3}
+        try:
+            got = tickmod.crossing_line(stg, 52.0, os.path.join(tmp, "t0110-guard"), {})
+            raised = None
+        except Exception as ex:
+            got, raised = None, ex.__class__.__name__
+    finally:
+        tickmod.linesmod.load_lines = real
+    prob = stg.get("_linesProblem") or ("", "")
+    check("0.11.0 T20: an exception in the lines step returns no line and leaves the note's reason",
+          raised is None and got == "" and "RuntimeError" in str(prob[1]), (raised, got, stg))
+
+    # QA round 1, F3: the peak is compared on the reading itself, not on a rounded copy
+    stp = {"sid": "p-1", "tick": 1}
+    tickmod.crossing_line(stp, 71.04, os.path.join(tmp, "t0110-peak"), {})
+    stp["peakAt"] = "first"
+    tickmod.crossing_line(stp, 71.02, os.path.join(tmp, "t0110-peak"), {})
+    check("0.11.0 T21: a slightly lower reading does not move the peak (QA round 1, F3)",
+          stp.get("peakPct") == 71.04 and stp.get("peakAt") == "first", stp)
+
+    # ---- X · the hook, on Codex ------------------------------------------------------------
+    sdirx = os.path.join(tmp, "x0110")
+    write(os.path.join(sdirx, "lines.json"), GOOD)
+    sx = U(110)
+    p1, home = rollout(tmp, sx, [("model", "gpt-x-test"), ("usage", 100000, 0, 258400)])
+    CX = {"CODEX_HOME": home}
+    ox1, _, _ = tick(sdirx, sx, n=10, transcript=p1, extra_env=CX)
+    p2, _ = rollout(tmp, sx, [("model", "gpt-x-test"), ("usage", 100000, 0, 258400), ("usage", 135000, 0, 258400)])
+    ox2, _, _ = tick(sdirx, sx, n=10, transcript=p2, extra_env=CX)
+    check("0.11.0 X1: on Codex, quiet below the line and the line at the crossing (135000 of 258400 = 52.2%)",
+          ox1 == "" and SAY50 in said(ox2) and state_of(sdirx, sx).get("substrate") == "codex", (ox1[:200], ox2[:300]))
+
+    # ---- B · the backup mark ---------------------------------------------------------------
+    wdir = os.path.join(tmp, "b0110")
+    book = os.path.join(tmp, "b0110-book", "Log.strain")
+    os.makedirs(os.path.dirname(book), exist_ok=True)
+    wenv = {"STRAIN_STATE_DIR": wdir}
+    wenv.update(LIM)
+
+    def wrap(args):
+        return run("_strain_wrap.py", None, list(args), wenv)
+
+    trb = os.path.join(tmp, "b0110.jsonl")
+    tick(wdir, "b-a", n=1000, transcript=fill(trb, 52000), extra_env=LIM)
+    run("_strain_sign.py", None, ["--agent", "ana", "--session", "b-a", "--ledger", book], wenv)
+    o, e, r = wrap(["--backup", "--session", "b-a"])
+    st = state_of(wdir, "b-a")
+    bk = st.get("backups") or []
+    check("0.11.0 B1: --backup records a backup with its fill and call, and is not a wrap",
+          r == 0 and len(bk) == 1 and abs(float(bk[0].get("pct") or 0) - 52.0) < 0.1 and bk[0].get("tick") == 1
+          and bool(bk[0].get("ts")) and not st.get("wrappedAt") and not st.get("wrapStartedAt"), (r, o, e, st))
+    check("0.11.0 B2: it says so in plain words, no path on stdout", "Owner: ana — backup marked" in o and "/" not in o, o)
+    last = (rows_of(book) or [{}])[-1]
+    check("0.11.0 B3: a signed session books a backup row",
+          last.get("type") == "backup" and last.get("session") == "b-a" and last.get("agent") == "ana"
+          and abs(float(last.get("pct") or 0) - 52.0) < 0.1, last)
+    check("0.11.0 B4: a backup is not a signal (signals are errors)", not st.get("signals"), st.get("signals"))
+    before_st, before_book = json.dumps(state_of(wdir, "b-a"), sort_keys=True), rows_of(book)
+    for combo in (["--start"], ["--cancel"], ["--with-debt"]):
+        o, e, r = wrap(["--backup"] + combo + ["--session", "b-a"])
+        check("0.11.0 B5: --backup with %s is refused, nothing written" % combo[0],
+              r == 2 and json.dumps(state_of(wdir, "b-a"), sort_keys=True) == before_st and rows_of(book) == before_book,
+              (r, o, e))
+    o, e, r = wrap(["--backup", "--label", "phase two", "--session", "b-a"])
+    bk = state_of(wdir, "b-a").get("backups") or []
+    check("0.11.0 B6: a second backup keeps the first, and carries its label",
+          r == 0 and len(bk) == 2 and bk[1].get("label") == "phase two" and (rows_of(book) or [{}])[-1].get("label") == "phase two",
+          (r, o, e, bk))
+    o, e, r = wrap(["--status", "--session", "b-a"])
+    try:
+        stat = json.loads(o)
+    except Exception:
+        stat = {}
+    check("0.11.0 B7: --status shows the backups and the lines passed",
+          r == 0 and stat.get("backups") == 2 and bool(stat.get("lastBackupAt")) and "crossed" in stat, o)
+
+
 def _arg(flag):
     return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv and sys.argv.index(flag) + 1 < len(sys.argv) else None
 
@@ -1350,12 +1683,13 @@ def main():
     if only is not None:
         # QA, second round: one section, nothing deleted (section 0.10.0 removes no file; the scripts it runs
         # write by temp file + rename), the folder named for the caller
-        if only != "0.10.0":
-            print("--only knows 0.10.0 only")
+        sections = {"0.10.0": section_0100, "0.11.0": section_0110}
+        if only not in sections:
+            print("--only knows %s only" % " and ".join(sorted(sections)))
             return 2
-        section_0100(tmp)
+        sections[only](tmp)
         print("kept: " + tmp)
-        print("\n%d/%d checks passed (section 0.10.0 only)" % (len(PASS), len(PASS) + len(FAIL)))
+        print("\n%d/%d checks passed (section %s only)" % (len(PASS), len(PASS) + len(FAIL), only))
         if FAIL:
             print("failed: " + ", ".join(FAIL))
             return 1
@@ -2173,6 +2507,7 @@ def main():
         section_084(tmp)
         section_090(tmp)
         section_0100(tmp)
+        section_0110(tmp)
 
     finally:
         # 0.10.0 (QA, first round): --keep deletes nothing and names the folder it used

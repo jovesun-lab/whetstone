@@ -304,6 +304,8 @@ if a file appears that no reader could attribute.
   Code shows it to the user), the boot says so, and the next saved reading notes the gap.
 - The project **ledger** (`Log.strain`, when you sign with one) is the only file strain
   writes inside a project, and only where you point it.
+- **`lines.json`** (0.11.0) is the one file in strain's folder that you write and strain
+  only reads — see *Your own lines at fill levels*.
 
 ## Cloud Cowork (0.7.0)
 
@@ -428,6 +430,47 @@ The stdout lines — `Strain · Owner: ana — signed (…)` and the plain `Stra
 sentence — are the proof: paste them back to the agent and the session is signed.
 Until then the session simply stays unsigned: measured, but part of no chain.
 
+## Your own lines at fill levels (0.11.0)
+
+strain's tiers and directives are its own fixed text. To have strain say **your** words when a
+session reaches a fill level, write them in a lines file:
+
+```json
+{"strain_lines": 1,
+ "lines": [{"at": 50, "say": "save a checkpoint", "mark": "backup"},
+           {"at": 70, "say": "begin the hand-off", "mark": "wrap-start"}]}
+```
+
+- **Where:** `STRAIN_LINES` (a path) if set, else `lines.json` in strain's folder. A link
+  there to a file you keep elsewhere works. No file: strain behaves exactly as before.
+- **When:** each line is said **once per session**, on the tool call whose fill crosses it —
+  not held to the next regular tick — as context for the agent (the user is not shown it).
+  A jump past two lines in one call (one large tool output, 45% → 75%) says only the higher
+  one. A fill that falls (a compaction) and rises again says nothing new. A session whose
+  first reading is already past a line hears the highest such line.
+- **The fill** is the one the tiers use (a measured, estimated or agent-fed reading
+  between 0 and 100%); with no trusted reading nothing is said.
+- **`mark`** (optional): `backup` or `wrap-start` — strain then adds the exact command
+  that records it (`strain-wrap.sh --backup` or `--start`, for this session).
+- **Rules:** `at` a number above 0 and at most 100, each at most once; `say` one line of
+  text, at most 300 characters; at most 20 lines. A file that is there but breaks a rule
+  (or a link to a file that is gone) is not used, and the next regular tick says so once,
+  naming the file and the reason. Nothing in the file can stop the counter: whatever goes
+  wrong in this step becomes that note. Two `at` values that differ are two lines, however
+  close.
+- **What it writes,** in the session's state: `crossed` (per line: when, at what fill and
+  call, and whether it was said or jumped) and `peakPct` / `peakAt` (the highest trusted
+  fill so far — the current reading falls after a compaction).
+
+### A backup mark (0.11.0)
+
+`strain-wrap.sh --backup` records that a mid-session backup was taken: a `{ts, tick, pct}`
+entry in the session's `backups` (with `--label`, its name) and, for a signed session, a
+`backup` row in the book. It is not a wrap and not a signal — signals are errors, and a
+repeated kind earns a pattern note. With `--start`, `--cancel` or `--with-debt` it is
+refused and writes nothing. `--status` shows the count, the last backup, the lines passed
+and the peak fill.
+
 ## What it counts
 
 **Context occupancy**, when measurable. Plus behaviour, always:
@@ -505,6 +548,7 @@ the command failed in the agent's own shell.)
 | `strain-wrap.sh --status` | show this session's wrap state (`wrappedAt`, `wrapStartedAt`) |
 | `strain-wrap.sh --start` | mark the wrap's first step: `wrapStartedAt`, a `wrap-start` row (0.10.0) |
 | `strain-wrap.sh --cancel` | call a started wrap off: the start is removed, a `wrap-cancel` row (0.10.0) |
+| `strain-wrap.sh --backup [--label "…"]` | mark a mid-session backup: a `backups` entry, a `backup` row; not a wrap (0.11.0) |
 | `strain-sign.sh --agent <name> --aka <other> [--aka …]` | declare other names for the agent; later signs under them resolve to it (0.10.0) |
 | `strain-sign.sh [--agent <name>] [--ledger <path>]` | declare who works this session (with no `--agent`: `<host> · <project folder>`); with a ledger, book boot-sign/wrap rows and report the previous session of the same agent; the first sign prints the receipt |
 | `strain-sign.sh --receipt` | repeat the user's sentence (stdout) and the agent's details (stderr), including "signed as <name>" or "not signed" |
