@@ -482,6 +482,23 @@ def section_080(tmp):
           "Strain receipt" in err and "host Claude Code" in err and "session %s" % sr2[:8] in err
           and "reading Claude transcript" in err and "window 1M (model hint)" in err
           and "hooks saving" in err, err)
+    # 0.11.1 (2026-10-18): a sign before the first reply has no model yet, so the reading is a size estimate over the default
+    # window -- the sentence calls the number a first estimate instead of stating it as fact (seen live: 23% on the default at
+    # sign-in, 9% on the model's real window at the first tick).
+    rce = os.path.join(tmp, "b4-estimate")
+    sre = U(51)
+    tpe = os.path.join(tmp, "home", ".claude", "projects", "proj", sre + ".jsonl")
+    os.makedirs(os.path.dirname(tpe), exist_ok=True)
+    with open(tpe, "w") as f:
+        for _ in range(2000):
+            f.write(json.dumps({"type": "user", "message": {"role": "user", "content": "x" * 80}}) + "\n")
+    tick(rce, sre, n=1000, transcript=tpe)
+    oute, erre, rce_rc = run("_strain_sign.py", None, ["--agent", "ana", "--session", sre],
+                             {"STRAIN_STATE_DIR": rce})
+    ule = user_line(oute)
+    check("0.11.1: a sign while the size is only a first estimate over the default says so, not a bare percent",
+          rce_rc == 0 and ule.startswith("Strain is on. A first estimate puts this conversation at about ")
+          and "% full" in ule and "can change" in ule and plain_ok(ule) and "(default)" in erre, (rce_rc, oute, erre))
     out2, _, _ = run("_strain_sign.py", None, ["--agent", "ana", "--session", sr2],
                      {"STRAIN_STATE_DIR": rcd})
     out3, err3, rc3 = run("_strain_sign.py", None, ["--receipt", "--session", sr2],
@@ -1671,6 +1688,128 @@ def section_0110(tmp):
         stat = {}
     check("0.11.0 B7: --status shows the backups and the lines passed",
           r == 0 and stat.get("backups") == 2 and bool(stat.get("lastBackupAt")) and "crossed" in stat, o)
+
+    # ---- D · a marked step the session already took (0.11.1) ------------------------------------
+    # Live, 2026-10-18: the 50 line asked for a backup taken 32 minutes before it, and
+    # the 70 line asked to start a wrap started 47 seconds before it. The state holds both; the line now
+    # keeps its words and says when the step was taken. A line is never hidden. Written first.
+    taken = getattr(lines, "taken", None) if lines else None
+    hhmm = getattr(lines, "hhmm", None) if lines else None
+
+    def tk(mark, st):
+        if taken is None:
+            return "<no taken()>"
+        try:
+            return taken(mark, st)
+        except Exception as ex:
+            return "<raised %s>" % ex.__class__.__name__
+
+    BK1 = {"ts": "2026-10-18T17:53:07-0700", "tick": 210, "pct": 50.3, "label": "handoff at 50 %"}
+    BK2 = {"ts": "2026-10-18T18:20:00-0700", "tick": 280, "pct": 63.0}
+    WS = {"wrapStartedAt": "2026-10-18T18:46:59-0700", "wrapStartTick": 321}
+    check("0.11.1 D1: no backup and no wrap start on record -> nothing taken",
+          tk("backup", {}) is None and tk("wrap-start", {}) is None, (tk("backup", {}), tk("wrap-start", {})))
+    check("0.11.1 D2: backups on record -> the newest one", tk("backup", {"backups": [BK1, BK2]}) == BK2,
+          tk("backup", {"backups": [BK1, BK2]}))
+    check("0.11.1 D3: a wrap start on record -> its time and call",
+          tk("wrap-start", WS) == {"ts": WS["wrapStartedAt"], "tick": 321}, tk("wrap-start", WS))
+    odd = [("backup", {"backups": "x"}), ("backup", {"backups": ["x", {"pct": 1}]}), ("backup", {"backups": [{"ts": 5}]}),
+           ("wrap-start", {"wrapStartedAt": 7}), ("wrap-start", {"wrapStartedAt": ""}), ("nope", {"backups": [BK1]}),
+           ("backup", None), ("wrap-start", "x")]
+    check("0.11.1 D4: what a hand-edited state can hold is nothing taken, never a raise",
+          all(tk(m, s) is None for m, s in odd), [tk(m, s) for m, s in odd])
+    check("0.11.1 D5: the time is the record's own HH:MM (no clock call); anything else is shown as it is",
+          hhmm is not None and hhmm("2026-10-18T17:53:07-0700") == "17:53" and hhmm("junk") == "junk",
+          hhmm and (hhmm("2026-10-18T17:53:07-0700"), hhmm("junk")))
+
+    ddir = os.path.join(tmp, "d0111")
+    write(os.path.join(ddir, "lines.json"), GOOD)
+    denv = {"STRAIN_STATE_DIR": ddir}
+    denv.update(LIM)
+    tra = os.path.join(tmp, "d0111-a.jsonl")
+    tick(ddir, "d-a", n=10, transcript=fill(tra, 40000), extra_env=LIM)
+    run("_strain_wrap.py", None, ["--start", "--session", "d-a"], denv)
+    st = state_of(ddir, "d-a")
+    hm = str(st.get("wrapStartedAt") or "")[11:16]
+    oa, _, _ = tick(ddir, "d-a", n=10, transcript=fill(tra, 71000), extra_env=LIM)
+    ca = said(oa)
+    check("0.11.1 D6: wrap already started -> the 70 line keeps its words, says when, and offers no command",
+          bool(hm) and SAY70 in ca and ("the wrap already started at %s (call %s); nothing to record" % (hm, st.get("wrapStartTick"))) in ca
+          and "strain-wrap.sh" not in ca, ca[:500])
+    trb = os.path.join(tmp, "d0111-b.jsonl")
+    tick(ddir, "d-b", n=10, transcript=fill(trb, 40000), extra_env=LIM)
+    run("_strain_wrap.py", None, ["--backup", "--session", "d-b"], denv)
+    bk = (state_of(ddir, "d-b").get("backups") or [{}])[-1]
+    hm = str(bk.get("ts") or "")[11:16]
+    ob, _, _ = tick(ddir, "d-b", n=10, transcript=fill(trb, 52000), extra_env=LIM)
+    cb = said(ob)
+    check("0.11.1 D7: a backup on record -> the 50 line keeps its words, says when and at what fill, and keeps the command",
+          bool(hm) and SAY50 in cb and ("a backup is on record at %s (40.0%%); take another only if the work has moved since: `" % hm) in cb
+          and "strain-wrap.sh --backup" in cb and "STRAIN_SESSION=d-b" in cb, cb[:500])
+    trc = os.path.join(tmp, "d0111-c.jsonl")
+    tick(ddir, "d-c", n=10, transcript=fill(trc, 40000), extra_env=LIM)
+    run("_strain_wrap.py", None, ["--start", "--session", "d-c"], denv)
+    run("_strain_wrap.py", None, ["--cancel", "--session", "d-c"], denv)
+    oc, _, _ = tick(ddir, "d-c", n=10, transcript=fill(trc, 71000), extra_env=LIM)
+    cc = said(oc)
+    check("0.11.1 D8: a wrap start called off -> the 70 line asks as before, with its command",
+          SAY70 in cc and (SAY70 + " -- once it is done, record it: `") in cc and "strain-wrap.sh --start" in cc
+          and "already started" not in cc, cc[:500])
+
+    # ---- D · what a recorded fill, call and time may hold (hand-edited state) ----------------------------
+    # A backup with pct 10**400 made the line raise OverflowError at the format after the line was marked
+    # said: the outer guard kept the tick, but the user's line was lost. inf printed "inf%". Written first.
+    fill_pct = getattr(lines, "fill_pct", None) if lines else None
+    call_no = getattr(lines, "call_no", None) if lines else None
+
+    def safe(fn, x):
+        if fn is None:
+            return "<missing>"
+        try:
+            return fn(x)
+        except Exception as ex:
+            return "<raised %s>" % ex.__class__.__name__
+
+    badp = [10 ** 400, float("inf"), float("-inf"), float("nan"), -0.1, 100.1, True, "50", None, [50]]
+    check("0.11.1 D9: a recorded fill is a number 0..100 or nothing -- huge, inf, nan, out of range, bool, text are nothing",
+          safe(fill_pct, 50.3) == 50.3 and safe(fill_pct, 0) == 0.0 and safe(fill_pct, 100) == 100.0
+          and all(safe(fill_pct, x) is None for x in badp), [safe(fill_pct, x) for x in [50.3] + badp])
+    badc = [-1, 10 ** 400, True, 3.0, "3", None]
+    check("0.11.1 D10: a recorded call is a whole number 0..999999999 (below 10**9) or nothing",
+          safe(call_no, 321) == 321 and safe(call_no, 0) == 0 and all(safe(call_no, x) is None for x in badc),
+          [safe(call_no, x) for x in [321] + badc])
+    junk = [("backup", {"backups": [{"ts": "yesterday"}]}), ("backup", {"backups": [{"ts": "x" * 5000}]}),
+            ("wrap-start", {"wrapStartedAt": "soon"}),
+            ("wrap-start", {"wrapStartedAt": "\u0662\u0660\u0662\u0666-\u0661\u0660-\u0661\u0668T\u0661\u0667:\u0665\u0663:\u0660\u0667-\u0660\u0667\u0660\u0660"})]
+    check("0.11.1 D11: a time that is not the state's own stamp is nothing taken (it would print as it stands)",
+          all(tk(m, s) is None for m, s in junk)
+          and tk("backup", {"backups": [BK1, {"ts": "later"}]}) == BK1, [tk(m, s) for m, s in junk])
+
+    for i, bad in enumerate((10 ** 400, float("inf"), float("nan"), 250)):
+        sid = "d-p%d" % i
+        trp = os.path.join(tmp, "d0111-p%d.jsonl" % i)
+        tick(ddir, sid, n=10, transcript=fill(trp, 40000), extra_env=LIM)
+        spath = os.path.join(ddir, "sessions", sid + ".json")
+        with open(spath) as f:
+            stp = json.load(f)
+        stp["backups"] = [{"ts": "2026-10-18T17:53:07-0700", "tick": 1, "pct": bad}]
+        with open(spath, "w") as f:
+            json.dump(stp, f)
+        op, _, _ = tick(ddir, sid, n=10, transcript=fill(trp, 52000), extra_env=LIM)
+        cp = said(op)
+        check("0.11.1 D12.%d: a backup whose fill is %s -> the line survives: words, the time, no fill, the command"
+              % (i, "10**400" if bad == 10 ** 400 else repr(bad)),
+              SAY50 in cp and "a backup is on record at 17:53; take another only if the work has moved since: `" in cp
+              and "strain-wrap.sh --backup" in cp and "inf" not in cp and "nan" not in cp, cp[:500])
+
+    # ---- D · two edges a deliberate break left green: the call bound and a stamp's tail --------------------
+    check("0.11.1 D13: the call bound is exclusive -- 10**9 is nothing, 10**9 - 1 is kept",
+          safe(call_no, 10 ** 9) is None and safe(call_no, 10 ** 9 - 1) == 10 ** 9 - 1,
+          (safe(call_no, 10 ** 9), safe(call_no, 10 ** 9 - 1)))
+    tail = [("backup", {"backups": [{"ts": "2026-10-18T17:53:07-0700junk"}]}),
+            ("wrap-start", {"wrapStartedAt": "2026-10-18T18:46:59-0700 and more"})]
+    check("0.11.1 D14: a stamp with text after it is nothing taken (the whole value must be the stamp)",
+          all(tk(m, s) is None for m, s in tail), [tk(m, s) for m, s in tail])
 
     # ---- J: a sign with no ledger says how to join one ------------------------------------------
     # A user's agent signed every chat for days with no session number: the receipt said "no ledger"

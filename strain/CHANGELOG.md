@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.11.1 — 2026-10-19
+
+- **The first sentence says when its number is a guess.** Before the agent's first reply no
+  model has been seen, so the reading is a size estimate over the default window; the sign
+  line now says "A first estimate puts this conversation at about N% full; the number can
+  change once strain reads the real size." instead of stating the number as fact (seen: 23%
+  at sign-in where the first measured reading was 9%). A measured reading keeps the plain
+  sentence.
+- **A line for a step already taken says when it was taken.** A line whose mark the session
+  already holds keeps its words: `wrap-start` with a wrap started (and not called off) adds
+  "the wrap already started at HH:MM (call N); nothing to record" and no command; `backup`
+  with a backup on record adds "a backup is on record at HH:MM (X%); take another only if
+  the work has moved since" and keeps the command. Seen live: a 50 line asked for a backup
+  taken 32 minutes before it, a 70 line asked to start a wrap started 47 seconds before.
+  The time is the record's own (no clock call). What a hand-edited state can hold is
+  checked before it is printed: a time that is not strain's own stamp is nothing taken; a
+  fill that is not a number 0..100 (10**400 once raised at the format and lost the line;
+  inf printed "inf%") is left out, the time and the command stay; a call that is not a
+  whole number 0..999999999 is left out. Selftest section 0.11.0: 17 checks (0.11.1 D1–D14),
+  written first, each seen red on its assertions but D8 (a start called off asks as
+  before) and D13–D14 (the call bound at 10**9, a stamp with text after it — two breaks
+  of the review's that stayed green), proved by mutants; 17 deliberate breaks on copies,
+  each red.
+
 ## 0.11.0 — 2026-10-18
 
 **Your own words at a fill level, said once when a session crosses it; and a backup mark.**

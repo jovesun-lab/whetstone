@@ -1118,6 +1118,12 @@ def user_line(st):
     kind, _why = reading_state(ctx)
     if not kind and ctx.get("pct") is not None:
         pct = max(1, int(round(float(ctx["pct"]))))
+        if ctx.get("limitSource") == "default":
+            # 0.11.1: the window is a default -- at sign-in no reply has named the model yet -- so the number is a guess
+            # (seen live: 23% on the default at sign-in, 9% on the model's real window at the first tick). Say so.
+            return ("Strain is on. A first estimate puts this conversation at about %d%% full; the number can change"
+                    " once strain reads the real size. Strain will tell you when it's time to wrap up and start"
+                    " fresh." % pct)
         return ("Strain is on. This conversation is %d%% full — strain will tell you when"
                 " it's time to wrap up and start fresh." % pct)
     return UNMEASURED_LINE

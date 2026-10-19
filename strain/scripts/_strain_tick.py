@@ -348,9 +348,20 @@ def _crossing_text(st, fill, sdir, path):
     st["crossed"] = crossed
     text = ("\U0001FA7A STRAIN LINE (fill %.1f%% crossed %s%%; from the lines file %s): %s"
             % (fill, linesmod.key(line["at"]), path, line["say"]))
-    if line.get("mark"):
-        text += (" -- once it is done, record it: `%s`."
-                 % act_command("strain-wrap.sh", st, sdir, linesmod.MARKS[line["mark"]]))
+    mark = line.get("mark")
+    if mark:
+        cmd = act_command("strain-wrap.sh", st, sdir, linesmod.MARKS[mark])
+        done = linesmod.taken(mark, st)   # 0.11.1: a step the session already took is named with its time
+        if done and mark == "wrap-start":
+            call = linesmod.call_no(done.get("tick"))
+            text += (" -- the wrap already started at %s%s; nothing to record."
+                     % (linesmod.hhmm(done["ts"]), " (call %d)" % call if call is not None else ""))
+        elif done and mark == "backup":
+            pct = linesmod.fill_pct(done.get("pct"))   # checked before the format
+            text += (" -- a backup is on record at %s%s; take another only if the work has moved since: `%s`."
+                     % (linesmod.hhmm(done["ts"]), " (%.1f%%)" % pct if pct is not None else "", cmd))
+        else:
+            text += " -- once it is done, record it: `%s`." % cmd
     return text
 
 

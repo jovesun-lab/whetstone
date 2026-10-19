@@ -14,7 +14,7 @@ Where: STRAIN_LINES (a path) > <state dir>/lines.json. A file that is there but 
 said once per session by the tick -- a broken setting is never silent -- and no line is printed
 from it. Pure functions: the caller passes the folder, the environment, the fill and what is passed.
 """
-import json, os
+import json, math, os, re
 
 VERSION = 1
 MAX_SAY = 300
@@ -103,3 +103,58 @@ def due_line(lines, fill, crossed):
         return None, []
     top = max(passed)
     return next(l for l in lines if l["at"] == top), passed
+
+
+def taken(mark, st):
+    """0.11.1: the record of a marked step this session already holds, or None. backup -> the newest
+    backup ({ts, tick, pct, label} as strain-wrap.sh --backup wrote it); wrap-start -> {ts, tick} of
+    the start while it is not called off (--cancel removes it). Reads st only; anything a
+    hand-edited state can hold is None, never a raise -- a line is then said as before."""
+    if not isinstance(st, dict):
+        return None
+    if mark == "backup":
+        backups = st.get("backups")
+        if not isinstance(backups, list):
+            return None
+        for b in reversed(backups):
+            if isinstance(b, dict) and _stamp(b.get("ts")):
+                return b
+        return None
+    if mark == "wrap-start":
+        ts = st.get("wrapStartedAt")
+        if _stamp(ts):
+            return {"ts": ts, "tick": st.get("wrapStartTick")}
+    return None
+
+
+# the state's own time stamp (_strain_common.now_iso: %Y-%m-%dT%H:%M:%S%z) -- any other text in a
+# hand-edited state is nothing taken, so it is never printed as it stands
+STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4}\Z", re.ASCII)
+
+
+def _stamp(ts):
+    return isinstance(ts, str) and bool(STAMP.match(ts))
+
+
+def fill_pct(x):
+    """A recorded fill as a float in 0..100, or None. A bool, a
+    text, an int too large for a float (10**400 raised OverflowError at the format), inf and nan are None."""
+    if isinstance(x, bool) or not isinstance(x, (int, float)):
+        return None
+    try:
+        f = float(x)
+    except (OverflowError, ValueError):
+        return None
+    return f if math.isfinite(f) and 0 <= f <= 100 else None
+
+
+def call_no(x):
+    """A recorded call (tick) as a whole number 0..999999999 (below 10**9), or None."""
+    return x if isinstance(x, int) and not isinstance(x, bool) and 0 <= x < 10 ** 9 else None
+
+
+def hhmm(ts):
+    """HH:MM of a state time ("2026-10-18T17:53:07-0700" -> "17:53"), read from the record itself
+    (the clock of the machine that wrote it); anything else is shown as it is."""
+    s = str(ts)
+    return s[11:16] if _stamp(s) else s

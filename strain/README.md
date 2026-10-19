@@ -260,6 +260,13 @@ plain sentence, and `strain-sign.sh --receipt` repeats it any time:
 Strain is on. This conversation is 10% full — strain will tell you when it's time to wrap up and start fresh.
 ```
 
+Before the agent's first reply no model has been seen yet, so the size is an estimate over a default window, and the
+sentence says so (0.11.1):
+
+```
+Strain is on. A first estimate puts this conversation at about 25% full; the number can change once strain reads the real size. Strain will tell you when it's time to wrap up and start fresh.
+```
+
 The agent gets the details on the side — host, session, where the reading comes from,
 where the window came from, whether the hooks are saving, whether its own shell can write
 (0.8.1; 0.8.0 showed users the agent's version, which was correct and unreadable):
@@ -451,7 +458,11 @@ session reaches a fill level, write them in a lines file:
 - **The fill** is the one the tiers use (a measured, estimated or agent-fed reading
   between 0 and 100%); with no trusted reading nothing is said.
 - **`mark`** (optional): `backup` or `wrap-start` — strain then adds the exact command
-  that records it (`strain-wrap.sh --backup` or `--start`, for this session).
+  that records it (`strain-wrap.sh --backup` or `--start`, for this session). When the
+  session already holds that step, the line keeps its words and says when instead
+  (0.11.1): a wrap already started → its time and call, and no command; a backup on
+  record → its time and fill, and the command stays (an old backup may be stale). A line
+  is never hidden.
 - **Rules:** `at` a number above 0 and at most 100, each at most once; `say` one line of
   text, at most 300 characters; at most 20 lines. A file that is there but breaks a rule
   (or a link to a file that is gone) is not used, and the next regular tick says so once,
